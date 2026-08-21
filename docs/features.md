@@ -24,11 +24,12 @@ use case, likely OUR core case (other ear free).
 ### [M3] Gesture vocabulary — IMPLEMENTED (MediaSession → stop/repeat/cancel_capture; server honors all three incl. mid-TTS cancel & replay). NOTE: whether buds deliver keys while SCO-active needs hardware test
 **Why:** Five distinct physical inputs exist (tap, 2×tap, 3×tap, pinch, pinch-hold);
 muscle memory gets built around whatever we ship first.
-**Mapping (defaults):**
-- pinch (assist trigger) → start speaking
-- double-tap (media NEXT) → stop/interrupt agent
+**Mapping (defaults), phase-aware (see ClientCommand.fromMediaKey):**
+- pinch (assist trigger) → SCO up → "go" cue → mic opens; talk when you hear it
+- tap (media PLAY/PAUSE): capturing → send now (flush); otherwise → stop agent
+- double-tap (media NEXT): capturing → drop utterance; otherwise → stop agent
 - triple-tap (media PREV) → replay last reply
-- pinch-hold / long-press (media PLAY/PAUSE hold) → cancel current utterance capture
+Cues: beep on mic-live ("talk"), pip on utterance-sent ("thinking").
 Earbud taps surface as AVRCP media keys on the phone; a MediaSession receives them.
 **Done when:** Media keys while the service runs produce `{"type":"command",...}` frames;
 server acknowledges them in logs; replay-last-reply works end-to-end.

@@ -16,6 +16,7 @@ const VALID = [
   '{"type":"command","command":"stop"}',
   '{"type":"command","command":"repeat"}',
   '{"type":"command","command":"cancel_capture"}',
+  '{"type":"utterance_end"}',
 ];
 const VALID_KINDS = ["stop", "repeat", "cancel_capture"];
 

@@ -251,6 +251,15 @@ function onControl(ws: WebSocket, state: ClientState, raw: string) {
       }
       break;
     }
+    case "utterance_end": {
+      // explicit "send now" (tap while capturing) — beats waiting for VAD silence
+      if (state.fsm.phase === "capturing") {
+        state.vad.reset();
+        step(ws, state, { kind: "UTTERANCE_END" });
+        void handleUtterance(ws, state);
+      }
+      break;
+    }
     default:
       assertNever(msg);
   }

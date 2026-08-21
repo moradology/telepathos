@@ -2,14 +2,20 @@ package dev.telepathy
 
 import android.app.Service
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
 import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioDeviceCallback
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.media.ToneGenerator
 import android.media.session.MediaSession
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import android.view.KeyEvent
 import okhttp3.OkHttpClient
@@ -58,7 +64,44 @@ class AudioCaptureService : Service() {
     @Volatile private var wantConnection = false
     private var reconnectAttempt = 0
 
+    // ---- capture start choreography (SCO-first, cued) ----
+
+    @Volatile private var lastPhase = "listening"
+    @Volatile private var scoPending = false
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val tone by lazy {
+        try { ToneGenerator(AudioManager.STREAM_VOICE_CALL, 80) } catch (_: Exception) { null }
+    }
+
+    /** Plays through the voice-call stream → lands in the earbuds once SCO is up. */
+    private fun playCue(toneId: Int, ms: Int) {
+        try { tone?.startTone(toneId, ms) } catch (_: Exception) {}
+    }
+
+    private val scoFallback = Runnable {
+        if (scoPending && captureRequested && !mic.isOpen) {
+            Log.w(TAG, "SCO didn't connect in 1.5s — opening phone mic instead")
+            scoPending = false
+            openMicNow()
+        }
+    }
+
+    private val scoReceiver = object : BroadcastReceiver() {
+        override fun onReceive(ctx: Context?, intent: Intent?) {
+            val state = intent?.getIntExtra(
+                AudioManager.EXTRA_SCO_AUDIO_STATE, AudioManager.SCO_AUDIO_STATE_DISCONNECTED)
+            if (state == AudioManager.SCO_AUDIO_STATE_CONNECTED &&
+                captureRequested && !mic.isOpen) {
+                scoPending = false
+                mainHandler.removeCallbacks(scoFallback)
+                openMicNow()
+            }
+        }
+    }
+
     override fun onCreate() {
+        super.onCreate()
+        registerReceiver(scoReceiver, IntentFilter(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED))
         super.onCreate()
         // Earbud (dis)connection tracking — M4
         audioManager.registerAudioDeviceCallback(object : AudioDeviceCallback() {
@@ -76,7 +119,7 @@ class AudioCaptureService : Service() {
                 override fun onMediaButtonEvent(mediaButtonIntent: Intent): Boolean {
                     val ev = mediaButtonIntent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
                     if (ev?.action == KeyEvent.ACTION_DOWN) {
-                        ClientCommand.fromMediaKey(ev.keyCode)?.let(::sendCommand)
+                        ClientCommand.fromMediaKey(ev.keyCode, lastPhase)?.let(::sendCommand)
                     }
                     return true
                 }
@@ -108,22 +151,39 @@ class AudioCaptureService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(Foreground.notifyId(), Foreground.start(this, "pinch to talk"))
         // Every pinch lands here (idempotent while running). It means "I want to talk":
-        captureRequested = true
-        if (!wantConnection) {
-            wantConnection = true
-            connect()
-        } else if (LinkState.current.wsUp) {
-            openMicIfRequested()
-        }
+        requestCaptureStart()
+        if (!wantConnection) connect()
         return START_STICKY
     }
 
-    /** The ONLY place capture begins. No socket → opens on next onOpen. */
-    private fun openMicIfRequested() {
+    /**
+     * The ONLY place capture begins. Choreography:
+     * buds present → raise SCO first (300-800ms), mic + "go" cue when it's up;
+     * no buds (rehearsal) or SCO failure → phone mic immediately.
+     * The user hears the cue EXACTLY when the real mic is live. No clipping, ever.
+     */
+    private fun requestCaptureStart() {
+        captureRequested = true
+        if (!wantConnection) return // mic opens on next onOpen
+        if (LinkState.current.budsOn && !mic.isOpen) {
+            scoPending = true
+            audioManager.startBluetoothSco()
+            audioManager.setBluetoothScoOn(true)
+            mainHandler.removeCallbacks(scoFallback)
+            mainHandler.postDelayed(scoFallback, 1500)
+        } else if (!mic.isOpen) {
+            openMicNow()
+        }
+    }
+
+    private fun openMicNow() {
         val socket = ws ?: return
         if (!captureRequested || mic.isOpen) return
         if (mic.open { chunk -> socket.send(chunk.toByteString()) }) {
+            playCue(ToneGenerator.TONE_PROP_BEEP, 120)   // "go ahead"
             updateNotification()
+        } else {
+            announcer.say("Microphone unavailable.")
         }
     }
 
@@ -144,11 +204,14 @@ class AudioCaptureService : Service() {
     override fun onDestroy() {
         wantConnection = false
         captureRequested = false
+        mainHandler.removeCallbacks(scoFallback)
+        unregisterReceiver(scoReceiver)
         mic.close()
         stopPlayback()
         ws?.close(1000, "bye")
         mediaSession?.release()
         mediaSession = null
+        try { tone?.release() } catch (_: Exception) {}
         announcer.shutdown()
         super.onDestroy()
     }
@@ -190,7 +253,7 @@ class AudioCaptureService : Service() {
             Log.i(TAG, "ws open")
             LinkState.setWs(true)
             webSocket.send("""{"type":"hello","device":"opendots2-pixel9"}""")
-            if (captureRequested) openMicIfRequested()
+            if (captureRequested) requestCaptureStart()
             else updateNotification()
         }
 
@@ -230,7 +293,13 @@ class AudioCaptureService : Service() {
                 TriggerLog.record(this, "server error: ${msg.message}")
                 announcer.say("Server error.")
             }
-            is ServerMsg.Phase -> TriggerLog.record(this, "· ${msg.value}")
+            is ServerMsg.Phase -> {
+                if (msg.value == "processing" && lastPhase == "capturing") {
+                    playCue(ToneGenerator.TONE_CDMA_PIP, 80) // "heard you — thinking"
+                }
+                lastPhase = msg.value
+                TriggerLog.record(this, "· ${msg.value}")
+            }
             ServerMsg.Ready -> TriggerLog.record(this, "server ready")
             ServerMsg.Listening -> onInteractionEnd()
             ServerMsg.AgentEnd -> Unit // state we track elsewhere
@@ -240,6 +309,8 @@ class AudioCaptureService : Service() {
     /** Interaction over: close the mic (battery contract), release session + SCO. */
     private fun onInteractionEnd() {
         captureRequested = false
+        scoPending = false
+        mainHandler.removeCallbacks(scoFallback)
         mic.close()
         mediaSession?.isActive = false
         updateNotification()

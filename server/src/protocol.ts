@@ -19,7 +19,12 @@ export interface Command {
   kind: ClientCommandKind;
 }
 
-export type ControlMsg = Hello | Command;
+/** Client says: stop capturing, send what you have (tap during capturing). */
+export interface UtteranceEnd {
+  tag: "utterance_end";
+}
+
+export type ControlMsg = Hello | Command | UtteranceEnd;
 
 /** Compile-time exhaustiveness guard: if a variant is unhandled, this fails to build. */
 export function assertNever(x: never): never {
@@ -47,6 +52,8 @@ export function parseControl(raw: string): ControlMsg | null {
       return COMMAND_KINDS.includes(msg.command)
         ? { tag: "command", kind: msg.command }
         : null;
+    case "utterance_end":
+      return { tag: "utterance_end" };
     default:
       return null;
   }
