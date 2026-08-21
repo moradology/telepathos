@@ -54,5 +54,16 @@ Server → client:
 - [x] Android: full audio client with **capture-on-demand** (mic open on pinch,
       closed after `listening` — zero radio/mic power between interactions)
 - [x] Typed interaction state machine (server-authoritative, phase broadcasts)
+- [x] Steering agent: LLM tool-calling loop over the lane API, catches grammar
+      misses (`TELEPATHY_META_MODEL` to enable); per-lane interaction stats
 - [ ] Piper TTS on the 3090
 - [ ] Hardware validation: pinch mapping, SCO routing, taps-during-SCO, carrier NAT
+
+## Steering-agent tool policy (permanent)
+
+Capabilities are added ONLY as named, typed tools against bridge state —
+never as primitives (no bash, no read_file, no grep, no write).
+Rationale: the tool list IS the sandbox; prompt rules are just UX.
+Current full surface: `list_lanes`, `active_lane`, `switch_lane`,
+`create_lane`, `lane_stats`. New tools must be single-operation,
+state-typed, and explicable in one sentence.
