@@ -1,0 +1,14 @@
+[package]
+name = "telepathyd"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+telepathy-lanes = { path = "../lanes" }
+telepathy-steering = { path = "../steering" }
+telepathy-proto = { path = "../proto" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+axum = { workspace = true }
+anyhow = { workspace = true }
