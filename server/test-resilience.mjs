@@ -72,7 +72,7 @@ async function test3_serverRestartMidStream() {
 }
 
 for (const t of [test1_normalFlow, test2_malformedFrames, test3_serverRestartMidStream,
-                  test4_preRollIntegrity, test5_forcedCapRecovery]) {
+                  test4_preRollIntegrity, test5_forcedCapRecovery, test7_flush]) {
   try { await t(); } catch (e) { check(t.name, false, String(e)); }
 }
 console.log(results.join("\n"));
@@ -133,3 +133,25 @@ async function test5_forcedCapRecovery() {
   check("forced cap: next utterance still works after cap", events.length === 2, `ends=${events.length}`);
 }
 
+
+// ---- pass 4 addition: explicit flush (utterance_end) ----
+async function test7_flush() {
+  const ws = new WebSocket("ws://localhost:8787");
+  const events = [];
+  await new Promise((res) => ws.on("open", res));
+  ws.on("message", (d, bin) => {
+    if (bin) return;
+    const m = JSON.parse(d.toString());
+    events.push(m.type);
+    if (m.type === "agent_end") { clearTimeout(kill); ws.close(); }
+  });
+  const loud = Buffer.alloc(3200);
+  for (let i = 0; i < 1600; i++) loud.writeInt16LE((i % 20) < 10 ? 8000 : -8000, i * 2);
+  for (let n = 0; n < 10; n++) ws.send(loud);   // speech...
+  ws.send('{"type":"utterance_end"}');           // ...then tap-to-send, NO silence wait
+  const kill = setTimeout(() => {}, 5000);
+  await sleep(4000);
+  check("flush: utterance_end ends capture without VAD silence",
+    events.includes("utterance") && events.includes("stt") && events.includes("agent_end"),
+    events.join(","));
+}

@@ -92,16 +92,25 @@ class AudioCaptureService : Service() {
                 AudioManager.EXTRA_SCO_AUDIO_STATE, AudioManager.SCO_AUDIO_STATE_DISCONNECTED)
             if (state == AudioManager.SCO_AUDIO_STATE_CONNECTED &&
                 captureRequested && !mic.isOpen) {
-                scoPending = false
-                mainHandler.removeCallbacks(scoFallback)
-                openMicNow()
+                // only stand down the fallback once the mic actually opened;
+                // if the socket isn't up yet, onOpen will re-run requestCaptureStart
+                if (openMicNow()) {
+                    scoPending = false
+                    mainHandler.removeCallbacks(scoFallback)
+                }
             }
         }
     }
 
     override fun onCreate() {
         super.onCreate()
-        registerReceiver(scoReceiver, IntentFilter(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED))
+        // RECEIVER_NOT_EXPORTED: system broadcast, other apps must not spoof it.
+        // Required flag on API 34+, otherwise registration throws.
+        registerReceiver(
+            scoReceiver,
+            IntentFilter(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED),
+            Context.RECEIVER_NOT_EXPORTED
+        )
         super.onCreate()
         // Earbud (dis)connection tracking — M4
         audioManager.registerAudioDeviceCallback(object : AudioDeviceCallback() {
@@ -151,8 +160,11 @@ class AudioCaptureService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(Foreground.notifyId(), Foreground.start(this, "pinch to talk"))
         // Every pinch lands here (idempotent while running). It means "I want to talk":
+        if (!wantConnection) {
+            wantConnection = true
+            connect()
+        }
         requestCaptureStart()
-        if (!wantConnection) connect()
         return START_STICKY
     }
 
@@ -176,14 +188,17 @@ class AudioCaptureService : Service() {
         }
     }
 
-    private fun openMicNow() {
-        val socket = ws ?: return
-        if (!captureRequested || mic.isOpen) return
-        if (mic.open { chunk -> socket.send(chunk.toByteString()) }) {
+    /** @return true iff the mic actually opened (false: no socket / init failure). */
+    private fun openMicNow(): Boolean {
+        val socket = ws ?: return false
+        if (!captureRequested || mic.isOpen) return false
+        return if (mic.open { chunk -> socket.send(chunk.toByteString()) }) {
             playCue(ToneGenerator.TONE_PROP_BEEP, 120)   // "go ahead"
             updateNotification()
+            true
         } else {
             announcer.say("Microphone unavailable.")
+            false
         }
     }
 
