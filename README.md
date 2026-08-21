@@ -49,6 +49,8 @@ Server → client:
 
 - [x] Server: WS bridge, VAD, whisper worker, pi session, TTS
 - [x] Android: pinch→assistant skeleton (the make-or-break test)
-- [ ] Android: full audio client
+- [x] Android: full audio client with **capture-on-demand** (mic open on pinch,
+      closed after `listening` — zero radio/mic power between interactions)
+- [x] Typed interaction state machine (server-authoritative, phase broadcasts)
 - [ ] Piper TTS on the 3090
-- [ ] Tap gestures → stop/approve/status
+- [ ] Hardware validation: pinch mapping, SCO routing, taps-during-SCO, carrier NAT

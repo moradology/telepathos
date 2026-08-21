@@ -5,11 +5,9 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
-import android.media.AudioManager
-import android.media.AudioRecord
-import android.media.AudioTrack
-import android.media.MediaRecorder
 import android.media.AudioDeviceCallback
+import android.media.AudioManager
+import android.media.AudioTrack
 import android.media.session.MediaSession
 import android.os.IBinder
 import android.util.Log
@@ -48,11 +46,15 @@ class AudioCaptureService : Service() {
     private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
 
     private var ws: WebSocket? = null
-    private var recorder: AudioRecord? = null
-    private var readerThread: Thread? = null
+    private val mic by lazy { MicController(this) }
     private var track: AudioTrack? = null
 
-    @Volatile private var serviceRunning = false
+    /**
+     * Capture policy (capture-on-demand): the pinch sets this; `listening` clears it.
+     * Between interactions the mic is CLOSED — zero radio, zero mic power.
+     */
+    @Volatile private var captureRequested = false
+
     @Volatile private var wantConnection = false
     private var reconnectAttempt = 0
 
@@ -95,16 +97,34 @@ class AudioCaptureService : Service() {
 
     private fun sendCommand(command: ClientCommand) {
         TriggerLog.record(this, "gesture → ${command::class.simpleName?.lowercase()}")
+        if (command == ClientCommand.CancelCapture) {
+            // pinch-hold: drop the utterance AND the mic — next pinch reopens
+            captureRequested = false
+            mic.close()
+        }
         ws?.send(command.toJson())
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(Foreground.notifyId(), Foreground.start(this, "listening…"))
+        startForeground(Foreground.notifyId(), Foreground.start(this, "pinch to talk"))
+        // Every pinch lands here (idempotent while running). It means "I want to talk":
+        captureRequested = true
         if (!wantConnection) {
             wantConnection = true
             connect()
+        } else if (LinkState.current.wsUp) {
+            openMicIfRequested()
         }
         return START_STICKY
+    }
+
+    /** The ONLY place capture begins. No socket → opens on next onOpen. */
+    private fun openMicIfRequested() {
+        val socket = ws ?: return
+        if (!captureRequested || mic.isOpen) return
+        if (mic.open { chunk -> socket.send(chunk.toByteString()) }) {
+            updateNotification()
+        }
     }
 
     private fun writeToTrack(arr: ByteArray) {
@@ -123,7 +143,8 @@ class AudioCaptureService : Service() {
 
     override fun onDestroy() {
         wantConnection = false
-        stopRecording()
+        captureRequested = false
+        mic.close()
         stopPlayback()
         ws?.close(1000, "bye")
         mediaSession?.release()
@@ -152,7 +173,7 @@ class AudioCaptureService : Service() {
 
     private fun scheduleReconnect(reason: String) {
         if (!wantConnection) return
-        stopRecording()
+        mic.close() // recorder is tied to a dead socket
         reconnectAttempt = Math.min(reconnectAttempt + 1, 6)
         val delayMs = (1000L shl (reconnectAttempt - 1)).coerceAtMost(30_000) // 1s..30s backoff
         Log.w(TAG, "disconnected ($reason); retry in ${delayMs}ms")
@@ -169,7 +190,8 @@ class AudioCaptureService : Service() {
             Log.i(TAG, "ws open")
             LinkState.setWs(true)
             webSocket.send("""{"type":"hello","device":"opendots2-pixel9"}""")
-            startRecording(webSocket)
+            if (captureRequested) openMicIfRequested()
+            else updateNotification()
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) = handleControl(text)
@@ -215,12 +237,10 @@ class AudioCaptureService : Service() {
         }
     }
 
-    /**
-     * Interaction over: release the media session back to real media apps (B2)
-     * and drop the SCO call-routing shortly after, so Bluetooth leaves
-     * power-hungry call mode (B3). Grace period lets buffered audio drain.
-     */
+    /** Interaction over: close the mic (battery contract), release session + SCO. */
     private fun onInteractionEnd() {
+        captureRequested = false
+        mic.close()
         mediaSession?.isActive = false
         updateNotification()
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
@@ -263,46 +283,6 @@ class AudioCaptureService : Service() {
             am.startBluetoothSco()
             am.setBluetoothScoOn(true)
         }
-    }
-
-    // ---- capture ----
-
-    private fun startRecording(socket: WebSocket) {
-        stopRecording() // never two readers
-        val sampleRate = 16000
-        val minBuf = AudioRecord.getMinBufferSize(
-            sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        val rec = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION,  // routes to HFP mic when SCO active
-            sampleRate, AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT, minBuf * 2
-        )
-        if (rec.state != AudioRecord.STATE_INITIALIZED) {
-            Log.e(TAG, "AudioRecord init failed")
-            rec.release()
-            stopSelf()
-            return
-        }
-        recorder = rec
-        rec.startRecording()
-        readerThread = Thread {
-            val buf = ByteArray(3200) // 100 ms chunks
-            while (!Thread.currentThread().isInterrupted && recorder === rec) {
-                val n = rec.read(buf, 0, buf.size)
-                if (n > 0) socket.send(buf.copyOf(n).toByteString())
-            }
-        }.also { it.start() }
-        TriggerLog.record(this, "mic streaming started → ${serverUrl()}")
-    }
-
-    /** Unblock + join the reader, release the mic. Safe to call repeatedly. */
-    private fun stopRecording() {
-        val rec = recorder
-        recorder = null
-        try { rec?.stop() } catch (_: Exception) {}   // unblocks read()
-        try { rec?.release() } catch (_: Exception) {}
-        readerThread?.join(1000)
-        readerThread = null
     }
 
     private val trackLock = Any()
