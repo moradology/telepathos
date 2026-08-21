@@ -8,5 +8,8 @@ export const config = {
   vadMinSpeechMs: Number(process.env.TELEPATHY_VAD_MIN_SPEECH_MS ?? 500),
   /** "openai" (whisper-1 API) | "local" (faster-whisper worker) | "echo" (dev stub). */
   stt: process.env.TELEPATHY_STT ?? "echo",
+  /** Agent-facing lane API (Hermes tools). localhost: only the same box needs it. */
+  apiPort: Number(process.env.TELEPATHY_API_PORT ?? 8788),
+  apiHost: process.env.TELEPATHY_API_HOST ?? "127.0.0.1",
   // NOTE: no TTS config — the phone speaks replies via its own TTS engine.
 };

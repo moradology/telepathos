@@ -34,8 +34,8 @@ check("'switch to main' does not intercept", parseMeta("switch to main", reg).op
 check("'switch to the other implementation' does not intercept",
   parseMeta("switch to the other implementation", reg).op === "unknown");
 
-// 3. back / list / new / brief
-check("switch back", parseMeta("switch back", reg).op === "back");
+// 3. list / new / brief   (note: "switch back" deliberately NOT a verb —
+// history/navigation is the agent's job via the lane API)
 check("list conversations", parseMeta("list conversations", reg).op === "list");
 check("what conversations do I have", parseMeta("what conversations do I have", reg).op === "list");
 check("new conversation for geospatial migration", (() => {
@@ -70,3 +70,23 @@ check("persist + reload", reloaded.lanes.length === 2 && reloaded.activeId === "
 
 console.log(failures === 0 ? "META TESTS PASS" : `${failures} FAILURES`);
 process.exit(failures ? 1 : 0);
+
+// 6. agent-facing lane API
+import { spawn } from "node:child_process";
+process.env.TELEPATHY_LANES = "/tmp/tp-api-lanes.json";
+process.env.TELEPATHY_PORT = "8791";
+process.env.TELEPATHY_API_PORT = "8792";
+try { rmSync("/tmp/tp-api-lanes.json"); } catch {}
+const srv = spawn("node", ["dist/index.js"], { env: process.env, stdio: "ignore" });
+await new Promise((r) => setTimeout(r, 1200));
+const base = "http://127.0.0.1:8792";
+const post = (p, b) => fetch(base + p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) });
+const st = await (await fetch(base + "/api/state")).json();
+check("api: state has direct lane", st.lanes.length === 1 && st.active === "direct");
+await post("/api/lanes", { name: "kerchunk" });
+const st2 = await (await fetch(base + "/api/state")).json();
+check("api: create+switch via tools", st2.active === "kerchunk" && st2.lanes.length === 2);
+await post("/api/lanes/active", { id: "telepathy:direct" });
+const st3 = await (await fetch(base + "/api/state")).json();
+check("api: switch via tools", st3.active === "direct");
+srv.kill();

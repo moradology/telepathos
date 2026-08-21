@@ -6,6 +6,7 @@ import { parseControl, assertNever } from "./protocol.js";
 import { InteractionState, InteractionEvent, transition, micOpen } from "./fsm.js";
 import { loadLanes, saveLanes, activeLane, switchLane, createLane, LaneRegistry } from "./lanes.js";
 import { parseMeta, MetaAction } from "./meta.js";
+import { startApiServer } from "./api.js";
 
 /**
  * telepathy bridge — v0.1 stub brain.
@@ -35,6 +36,7 @@ interface ClientState {
 }
 
 const lanes: LaneRegistry = loadLanes();
+startApiServer(lanes, config.apiPort, config.apiHost);
 
 const wss = new WebSocketServer({ port: config.port, host: "0.0.0.0", maxPayload: 1 << 20 });
 
@@ -286,10 +288,6 @@ function executeMeta(action: MetaAction): string {
       const lane = switchLane(lanes, action.lane.id);
       return `Switched to ${lane.name}.`;
     }
-    case "back": {
-      const lane = switchLane(lanes, action.lane.id);
-      return `Back to ${lane.name}.`;
-    }
     case "list": {
       const active = activeLane(lanes);
       const list = lanes.lanes
@@ -312,7 +310,7 @@ function executeMeta(action: MetaAction): string {
       return `Lane ${lane.name}. Last active ${ageText} ago. Full briefing arrives with the Hermes connector.`;
     }
     case "unknown":
-      return "Meta commands: switch to name, list conversations, new conversation for name, brief, switch back.";
+      return "Meta commands: switch to name, list conversations, new conversation for name, brief.";
   }
 }
 

@@ -10,7 +10,6 @@ import { Lane, LaneRegistry } from "./lanes.js";
 
 export type MetaAction =
   | { op: "switch"; lane: Lane }
-  | { op: "back"; lane: Lane }
   | { op: "list" }
   | { op: "new"; name: string }
   | { op: "brief"; lane: Lane | null }
@@ -72,11 +71,8 @@ export function parseMeta(rawTranscript: string, reg: LaneRegistry): MetaAction 
   const text = normalize(rawTranscript);
   if (!text) return { op: "unknown" };
 
-  // switch back
-  if (/^(switch|go) back$/.test(text) || /^back$/.test(text)) {
-    const lane = reg.lanes.find((l) => l.id === reg.previousId) ?? reg.lanes[0];
-    return { op: "back", lane };
-  }
+  // switch back — REMOVED on purpose: history/navigation is the agent's job
+  // (it gets tools against the lane API); see docs/features.md.
 
   // list
   if (/^(list|show|what are the|what conversations?|which conversations?)/.test(text) &&
