@@ -15,7 +15,7 @@ import org.json.JSONObject
 
 sealed interface ServerMsg {
     data class Stt(val text: String) : ServerMsg
-    data class TtsStart(val sampleRate: Int) : ServerMsg
+    data class AgentDelta(val text: String) : ServerMsg
     data class Error(val message: String) : ServerMsg
     /** Interaction lifecycle broadcast from the server's state machine (docs/features.md). */
     data class Phase(val value: String) : ServerMsg
@@ -31,7 +31,7 @@ sealed interface ServerMsg {
             val o = JSONObject(raw)
             when (o.optString("type")) {
                 "stt" -> Stt(o.optString("text"))
-                "tts_start" -> TtsStart(o.optInt("sampleRate", 22050))
+                "agent_delta" -> AgentDelta(o.optString("text"))
                 "error" -> Error(o.optString("message"))
                 "phase" -> Phase(o.optString("value"))
                 "ready" -> Ready

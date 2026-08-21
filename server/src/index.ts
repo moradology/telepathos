@@ -1,7 +1,6 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { config } from "./config.js";
 import { EnergyVad } from "./vad.js";
-import { synthesize } from "./tts.js";
 import { transcribe } from "./transcriber.js";
 import { parseControl, assertNever } from "./protocol.js";
 import { InteractionState, InteractionEvent, transition, micOpen } from "./fsm.js";
@@ -143,41 +142,18 @@ async function handleUtterance(ws: WebSocket, state: ClientState) {
 
     if (state.cancelRequested) return finish(ws, state);
 
-    // M5: echo-back confirmation before acting — misrecognitions become visible,
-    // and the user can stop the agent with a double-tap while this plays.
-    if (config.echo === "on") {
-      const audio = await synthesize(`Working on: ${text}`);
-      if (audio && !state.cancelRequested) {
-        step(ws, state, { kind: "BEGIN_ECHO", sampleRate: audio.sampleRate });
-        send(ws, { type: "tts_start", sampleRate: audio.sampleRate, samples: audio.pcm.length >> 1 });
-        await streamPcmWithBackpressure(ws, state, audio.pcm, audio.sampleRate);
-        step(ws, state, { kind: "PLAYBACK_DONE" });
-      }
-      if (state.cancelRequested) return finish(ws, state);
-    }
-
     const reply = await respond(text);
     for await (const delta of chunks(reply)) {
       if (state.cancelRequested) break;
       send(ws, { type: "agent_delta", text: delta });
     }
-
-    if (!state.cancelRequested) {
-      const audio = await synthesize(reply);
-      if (audio) {
-        step(ws, state, { kind: "BEGIN_REPLY", sampleRate: audio.sampleRate });
-        send(ws, { type: "tts_start", sampleRate: audio.sampleRate, samples: audio.pcm.length >> 1 });
-        await streamPcmWithBackpressure(ws, state, audio.pcm, audio.sampleRate);
-        step(ws, state, { kind: "PLAYBACK_DONE" });
-      }
-    }
-    // agent_end means the whole reply (text + audio) is out — not just the text.
-    // Sending it earlier made clients talk into a deaf mic.
+    // agent_end means the full reply text is out; the PHONE speaks it
+    // (on-device TTS) and owns playback completion.
     finish(ws, state, reply);
   } catch (e) {
     send(ws, { type: "error", message: String((e as Error).message ?? e) });
   } finally {
-    // whatever happened, land back on listening so the mic reopens
+    // whatever happened, land back on listening so the mic can reopen on next pinch
     if (!micOpen(state.fsm)) step(ws, state, { kind: "CANCEL" });
     send(ws, { type: "listening" });
   }
@@ -187,27 +163,6 @@ function finish(ws: WebSocket, state: ClientState, reply?: string) {
   if (reply !== undefined) state.lastReply = reply;
   if (state.cancelRequested) console.log("interaction cancelled by user");
   send(ws, { type: "agent_end" });
-}
-
-/** Stream one synthesized payload; pauses on socket backpressure, aborts on cancel/close. */
-async function streamPcmWithBackpressure(
-  ws: WebSocket,
-  state: ClientState,
-  pcm: Buffer,
-  sampleRate: number,
-): Promise<void> {
-  const frameSize = Math.floor(sampleRate * 2 * 0.2); // ~200 ms frames
-  const highWater = 256 * 1024;
-  for (let i = 0; i < pcm.length; i += frameSize) {
-    if (state.cancelRequested || ws.readyState !== WebSocket.OPEN) return;
-    if (ws.bufferedAmount > highWater) {
-      await new Promise((r) => setTimeout(r, 50));
-      i -= frameSize; // retry this frame
-      continue;
-    }
-    ws.send(pcm.subarray(i, Math.min(i + frameSize, pcm.length)), { binary: true });
-    await new Promise((r) => setTimeout(r, 0)); // let cancel flags arrive between frames
-  }
 }
 
 function onControl(ws: WebSocket, state: ClientState, raw: string) {
@@ -265,17 +220,14 @@ function onControl(ws: WebSocket, state: ClientState, raw: string) {
   }
 }
 
-/** Triple-tap: re-speak the last agent reply without re-querying. */
+/** Triple-tap: re-send the last reply as text; the phone speaks it again. */
 async function replayLast(ws: WebSocket, state: ClientState) {
   const reply = state.lastReply!;
   state.cancelRequested = false;
   try {
-    const audio = await synthesize(reply);
-    if (audio && !state.cancelRequested) {
-      step(ws, state, { kind: "BEGIN_REPLY", sampleRate: audio.sampleRate });
-      send(ws, { type: "tts_start", sampleRate: audio.sampleRate, samples: audio.pcm.length >> 1 });
-      await streamPcmWithBackpressure(ws, state, audio.pcm, audio.sampleRate);
-      step(ws, state, { kind: "PLAYBACK_DONE" });
+    for await (const delta of chunks(reply)) {
+      if (state.cancelRequested) break;
+      send(ws, { type: "agent_delta", text: delta });
     }
     finish(ws, state);
   } catch (e) {
@@ -317,7 +269,7 @@ function wrapWav(pcm: Buffer, sampleRate: number): Buffer {
   return Buffer.concat([header, pcm]);
 }
 
-console.log(`telepathy bridge listening on :${config.port} (stt=${config.stt} tts=${config.tts}${process.env.TELEPATHY_TOKEN ? " auth=on" : ""})`);
+console.log(`telepathy bridge listening on :${config.port} (stt=${config.stt}${process.env.TELEPATHY_TOKEN ? " auth=on" : ""})`);
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {

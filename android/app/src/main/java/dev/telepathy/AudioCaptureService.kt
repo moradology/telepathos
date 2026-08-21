@@ -5,12 +5,9 @@ import android.content.Intent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.IntentFilter
-import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
-import android.media.AudioFormat
 import android.media.AudioDeviceCallback
 import android.media.AudioManager
-import android.media.AudioTrack
 import android.media.ToneGenerator
 import android.media.session.MediaSession
 import android.os.Handler
@@ -23,7 +20,6 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
-import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import java.util.concurrent.TimeUnit
 
@@ -53,7 +49,9 @@ class AudioCaptureService : Service() {
 
     private var ws: WebSocket? = null
     private val mic by lazy { MicController(this) }
-    private var track: AudioTrack? = null
+
+    // phone-TTS mode: the server sends TEXT only; we speak it on-device.
+    private val replyText = StringBuilder()
 
     /**
      * Capture policy (capture-on-demand): the pinch sets this; `listening` clears it.
@@ -202,27 +200,12 @@ class AudioCaptureService : Service() {
         }
     }
 
-    private fun writeToTrack(arr: ByteArray) {
-        synchronized(trackLock) {
-            val t = track ?: return
-            try { t.write(arr, 0, arr.size) } catch (e: Exception) { Log.w(TAG, "track write: ${e.message}") }
-        }
-    }
-
-    private fun stopPlayback() {
-        synchronized(trackLock) {
-            try { track?.stop(); track?.release() } catch (_: Exception) {}
-            track = null
-        }
-    }
-
     override fun onDestroy() {
         wantConnection = false
         captureRequested = false
         mainHandler.removeCallbacks(scoFallback)
         unregisterReceiver(scoReceiver)
         mic.close()
-        stopPlayback()
         ws?.close(1000, "bye")
         mediaSession?.release()
         mediaSession = null
@@ -274,10 +257,6 @@ class AudioCaptureService : Service() {
 
         override fun onMessage(webSocket: WebSocket, text: String) = handleControl(text)
 
-        override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-            writeToTrack(bytes.toByteArray())
-        }
-
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             if (LinkState.current.wsUp) {
                 // we HAD a link and lost it — say so out loud (M4: feedback lives in the ears)
@@ -299,11 +278,14 @@ class AudioCaptureService : Service() {
         when (val msg = ServerMsg.parse(text)) {
             // exhaustive over the union — a new ServerMsg variant fails compilation here
             null -> Log.w(TAG, "dropping unparseable control frame")
-            is ServerMsg.Stt -> TriggerLog.record(this, "heard: ${msg.text}")
-            is ServerMsg.TtsStart -> {
-                mediaSession?.isActive = true   // our taps matter while we're talking (B2)
-                startPlayback(msg.sampleRate)
+            is ServerMsg.Stt -> {
+                replyText.clear()          // new interaction
+                mediaSession?.isActive = true  // taps matter from here until the reply ends
+                TriggerLog.record(this, "heard: ${msg.text}")
+                // M5 echo-back, client-side: confirmation before the agent acts
+                announcer.say("Working on: ${msg.text}")
             }
+            is ServerMsg.AgentDelta -> replyText.append(msg.text)
             is ServerMsg.Error -> {
                 TriggerLog.record(this, "server error: ${msg.message}")
                 announcer.say("Server error.")
@@ -317,19 +299,31 @@ class AudioCaptureService : Service() {
                 TriggerLog.record(this, "· ${msg.value}")
             }
             ServerMsg.Ready -> TriggerLog.record(this, "server ready")
-            ServerMsg.Listening -> onInteractionEnd()
-            ServerMsg.AgentEnd -> Unit // state we track elsewhere
+            ServerMsg.Listening -> {
+                // mic closes NOW; SCO/session release waits until speech is done
+                captureRequested = false
+                mic.close()
+                updateNotification()
+            }
+            ServerMsg.AgentEnd -> {
+                val reply = replyText.toString().trim()
+                if (reply.isNotEmpty()) {
+                    announcer.speakReply(reply) { finishInteraction() }
+                } else {
+                    finishInteraction()
+                }
+            }
         }
     }
 
-    /** Interaction over: close the mic (battery contract), release session + SCO. */
-    private fun onInteractionEnd() {
-        captureRequested = false
+    /**
+     * Speech finished (or nothing to say): release the media session back to real
+     * media apps and drop SCO call-routing after a short grace period.
+     */
+    private fun finishInteraction() {
+        mediaSession?.isActive = false
         scoPending = false
         mainHandler.removeCallbacks(scoFallback)
-        mic.close()
-        mediaSession?.isActive = false
-        updateNotification()
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
             try {
                 audioManager.stopBluetoothSco()
@@ -337,42 +331,6 @@ class AudioCaptureService : Service() {
             } catch (_: Exception) {}
         }, 800)
     }
-
-    // ---- playback ----
-
-    /** Route TTS to the active call stream so it lands in the earbuds during SCO. */
-    private fun startPlayback(sampleRate: Int) {
-        val minBuf = AudioTrack.getMinBufferSize(
-            sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        val t = AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build())
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(sampleRate)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build())
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .setBufferSizeInBytes(minBuf * 2)
-            .build()
-        synchronized(trackLock) {
-            try { track?.stop(); track?.release() } catch (_: Exception) {}
-            track = t
-        }
-        t.play()
-        // make sure BT SCO link is up so audio goes to the earbuds, not the phone speaker
-        val am = getSystemService(AUDIO_SERVICE) as AudioManager
-        if (!am.isBluetoothScoOn) {
-            am.startBluetoothSco()
-            am.setBluetoothScoOn(true)
-        }
-    }
-
-    private val trackLock = Any()
 
     companion object { private const val TAG = "Telepathy" }
 }

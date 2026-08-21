@@ -8,8 +8,5 @@ export const config = {
   vadMinSpeechMs: Number(process.env.TELEPATHY_VAD_MIN_SPEECH_MS ?? 500),
   /** "openai" (uses OPENAI_API_KEY + whisper-1) or "echo" (dev: no STT). */
   stt: process.env.TELEPATHY_STT ?? "echo",
-  /** "say" (mac dev) | "piper" (linux deploy) | "none". */
-  tts: process.env.TELEPATHY_TTS ?? "say",
-  /** Speak "Working on: …" confirmation before agent work (see docs/features.md M5). */
-  echo: process.env.TELEPATHY_ECHO ?? "on",
+  // NOTE: no TTS config — the phone speaks replies via its own TTS engine.
 };

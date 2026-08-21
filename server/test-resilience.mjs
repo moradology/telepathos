@@ -7,13 +7,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function test1_normalFlow() {
   const ws = new WebSocket("ws://localhost:8787");
   const events = [];
-  let ttsBytes = 0;
   await new Promise((res, rej) => { ws.on("open", res); ws.on("error", rej); });
-  ws.on("message", (data, isBinary) => {
-    if (isBinary) { ttsBytes += data.length; return; }
+  ws.on("message", (data) => {
     const m = JSON.parse(data.toString());
     events.push(m.type);
-    if (m.type === "agent_end") setTimeout(() => ws.close(), 3000); // let TTS frames land first
+    if (m.type === "agent_end") ws.close();
   });
   const loud = Buffer.alloc(3200);
   for (let i = 0; i < 1600; i++) loud.writeInt16LE((i % 20) < 10 ? 8000 : -8000, i * 2);
@@ -22,8 +20,9 @@ async function test1_normalFlow() {
   for (let n = 0; n < 25; n++) { ws.send(quiet); await sleep(80); }
   await sleep(4000);
   check("normal flow: full event sequence", events.includes("ready") && events.includes("speech_start")
-    && events.includes("utterance") && events.includes("stt") && events.includes("agent_end"));
-  check("normal flow: tts audio arrived", ttsBytes > 100000, `${ttsBytes} bytes`);
+    && events.includes("utterance") && events.includes("stt") && events.includes("agent_delta")
+    && events.includes("agent_end"));
+  check("normal flow: reply delivered as text (phone speaks it)", events.includes("agent_delta"));
 }
 
 async function test2_malformedFrames() {
