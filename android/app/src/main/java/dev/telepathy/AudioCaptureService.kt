@@ -37,7 +37,8 @@ class AudioCaptureService : Service() {
 
     private val client by lazy {
         OkHttpClient.Builder()
-            .pingInterval(15, TimeUnit.SECONDS)
+            // 15s kept radios from settling; 30s still beats NAT idle timeouts comfortably
+            .pingInterval(30, TimeUnit.SECONDS)
             .connectTimeout(10, TimeUnit.SECONDS)
             .build()
     }
@@ -66,6 +67,8 @@ class AudioCaptureService : Service() {
 
         // Earbud taps arrive as AVRCP media keys (features.md M3).
         // Key→command mapping lives in ClientCommand.fromMediaKey (pure, testable).
+        // Session is INACTIVE except mid-interaction (B2 fix): inactive sessions
+        // leave media keys to whichever app is actually playing.
         mediaSession = MediaSession(this, "Telepathy").apply {
             setCallback(object : MediaSession.Callback() {
                 override fun onMediaButtonEvent(mediaButtonIntent: Intent): Boolean {
@@ -76,7 +79,7 @@ class AudioCaptureService : Service() {
                     return true
                 }
             })
-            isActive = true
+            isActive = false
         }
     }
 
@@ -197,15 +200,35 @@ class AudioCaptureService : Service() {
             // exhaustive over the union — a new ServerMsg variant fails compilation here
             null -> Log.w(TAG, "dropping unparseable control frame")
             is ServerMsg.Stt -> TriggerLog.record(this, "heard: ${msg.text}")
-            is ServerMsg.TtsStart -> startPlayback(msg.sampleRate)
+            is ServerMsg.TtsStart -> {
+                mediaSession?.isActive = true   // our taps matter while we're talking (B2)
+                startPlayback(msg.sampleRate)
+            }
             is ServerMsg.Error -> {
                 TriggerLog.record(this, "server error: ${msg.message}")
                 announcer.say("Server error.")
             }
             is ServerMsg.Phase -> TriggerLog.record(this, "· ${msg.value}")
             ServerMsg.Ready -> TriggerLog.record(this, "server ready")
-            ServerMsg.Listening, ServerMsg.AgentEnd -> Unit // state we track elsewhere
+            ServerMsg.Listening -> onInteractionEnd()
+            ServerMsg.AgentEnd -> Unit // state we track elsewhere
         }
+    }
+
+    /**
+     * Interaction over: release the media session back to real media apps (B2)
+     * and drop the SCO call-routing shortly after, so Bluetooth leaves
+     * power-hungry call mode (B3). Grace period lets buffered audio drain.
+     */
+    private fun onInteractionEnd() {
+        mediaSession?.isActive = false
+        updateNotification()
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            try {
+                audioManager.stopBluetoothSco()
+                audioManager.setBluetoothScoOn(false)
+            } catch (_: Exception) {}
+        }, 800)
     }
 
     // ---- playback ----
