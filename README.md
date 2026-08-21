@@ -39,7 +39,9 @@ Client → server:
 Server → client:
 - `{"type":"ready"}` — handshake ack
 - `{"type":"listening"}` / `{"type":"speech_start"}` / `{"type":"utterance","samples":N}` — VAD state
-- `{"type":"stt","text":"..."}` — transcript
+- `{"type":"stt","text":"...","confidence":0.83,"repo":"telepathy"}` — transcript;
+  `confidence` present only when the backend reports it (faster-whisper), `repo` when
+  `TELEPATHY_REPO` is set
 - `{"type":"agent_start"}` / `{"type":"agent_delta","text":"..."}` / `{"type":"agent_end"}` — pi streaming (`agent_end` = full reply incl. audio sent)
 - `{"type":"tts_start","sampleRate":N,"samples":N}` then binary PCM frames — spoken reply (raw PCM16 mono, no WAV header)
 - `{"type":"listening"}` — server VAD is live again after an interaction

@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { config } from "./config.js";
 import { EnergyVad } from "./vad.js";
-import { transcribe } from "./transcriber.js";
+import { transcribe, Transcript } from "./transcriber.js";
 import { parseControl, assertNever } from "./protocol.js";
 import { InteractionState, InteractionEvent, transition, micOpen } from "./fsm.js";
 
@@ -135,10 +135,24 @@ async function handleUtterance(ws: WebSocket, state: ClientState) {
   try {
     // PCM16@16k → WAV container for STT
     const wav = wrapWav(pcm, 16000);
-    let text = await transcribe(wav);
-    if (text === null) text = "(stt in echo mode — no transcription)";
-    send(ws, { type: "stt", text });
-    console.log("stt:", text);
+    const t0 = Date.now();
+    let transcript: Transcript | null;
+    try {
+      transcript = await transcribe(wav);
+    } catch (e) {
+      // STT failure must not kill the interaction — degrade to a spoken error
+      send(ws, { type: "error", message: `stt: ${(e as Error).message}` });
+      transcript = null;
+    }
+    const text = transcript?.text ?? "(transcription unavailable)";
+    send(ws, {
+      type: "stt",
+      text,
+      ...(transcript?.confidence !== undefined && { confidence: transcript.confidence }),
+      ...(process.env.TELEPATHY_REPO && { repo: process.env.TELEPATHY_REPO }),
+    });
+    console.log(`stt (${Date.now() - t0}ms):`, text,
+      transcript?.confidence !== undefined ? `[conf ${transcript.confidence}]` : "");
 
     if (state.cancelRequested) return finish(ws, state);
 

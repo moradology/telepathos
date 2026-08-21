@@ -281,9 +281,19 @@ class AudioCaptureService : Service() {
             is ServerMsg.Stt -> {
                 replyText.clear()          // new interaction
                 mediaSession?.isActive = true  // taps matter from here until the reply ends
-                TriggerLog.record(this, "heard: ${msg.text}")
-                // M5 echo-back, client-side: confirmation before the agent acts
-                announcer.say("Working on: ${msg.text}")
+
+                // M5 echo-back with confidence awareness: flag uncertain transcriptions
+                val conf = msg.confidence
+                val prefix = when {
+                    conf != null && conf < 0.6 -> "Not sure I got that — working on:"
+                    else -> "Working on:"
+                }
+                TriggerLog.record(this, buildString {
+                    append("heard: ${msg.text}")
+                    if (conf != null) append(String.format(" [%.0f%%]", conf * 100))
+                    if (msg.repo != null) append(" @${msg.repo}")
+                })
+                announcer.say("$prefix ${msg.text}")
             }
             is ServerMsg.AgentDelta -> replyText.append(msg.text)
             is ServerMsg.Error -> {

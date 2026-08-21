@@ -6,7 +6,7 @@ export const config = {
   vadSilenceMs: Number(process.env.TELEPATHY_VAD_SILENCE_MS ?? 1500),
   /** Minimum speech duration (ms) for a valid utterance. */
   vadMinSpeechMs: Number(process.env.TELEPATHY_VAD_MIN_SPEECH_MS ?? 500),
-  /** "openai" (uses OPENAI_API_KEY + whisper-1) or "echo" (dev: no STT). */
+  /** "openai" (whisper-1 API) | "local" (faster-whisper worker) | "echo" (dev stub). */
   stt: process.env.TELEPATHY_STT ?? "echo",
   // NOTE: no TTS config — the phone speaks replies via its own TTS engine.
 };

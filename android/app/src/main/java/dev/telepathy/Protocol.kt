@@ -14,7 +14,11 @@ import org.json.JSONObject
  */
 
 sealed interface ServerMsg {
-    data class Stt(val text: String) : ServerMsg
+    data class Stt(
+        val text: String,
+        val confidence: Double? = null,
+        val repo: String? = null,
+    ) : ServerMsg
     data class AgentDelta(val text: String) : ServerMsg
     data class Error(val message: String) : ServerMsg
     /** Interaction lifecycle broadcast from the server's state machine (docs/features.md). */
@@ -30,7 +34,11 @@ sealed interface ServerMsg {
         fun parse(raw: String): ServerMsg? = runCatching {
             val o = JSONObject(raw)
             when (o.optString("type")) {
-                "stt" -> Stt(o.optString("text"))
+                "stt" -> Stt(
+                    text = o.optString("text"),
+                    confidence = if (o.has("confidence")) o.optDouble("confidence") else null,
+                    repo = if (o.has("repo")) o.optString("repo") else null,
+                )
                 "agent_delta" -> AgentDelta(o.optString("text"))
                 "error" -> Error(o.optString("message"))
                 "phase" -> Phase(o.optString("value"))
