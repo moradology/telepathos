@@ -110,7 +110,7 @@ impl Provider for OpenAiProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{execute_tool, run, tools};
+    use crate::{execute_tool, run, tools, SteeringTool};
     use telepathy_lanes::LaneRegistry;
 
     #[test]
@@ -172,7 +172,7 @@ mod tests {
         // two scripted providers alternating via a mutex-wrapped enum would be
         // overkill; instead verify tool execution effect directly:
         let mut reg = LaneRegistry::default_direct();
-        let out = execute_tool(&mut reg, "create_lane", &json!({"name":"demo"}));
+        let out = execute_tool(&mut reg, SteeringTool::CreateLane, &json!({"name":"demo"}));
         assert!(out.contains("Created"));
         assert_eq!(reg.active().name, "demo");
 

@@ -1,64 +1,110 @@
-//! The steering agent loop, pi-style: the loop is provider-agnostic.
-//! `Provider` is injected (StreamFn analog); tools are typed data.
+//! The steering agent loop. Deliberately NON-abstract: we know every tool
+//! that will ever exist, so the tool set is a closed enum, dispatch is a
+//! match, and nothing is a string once it's inside.
+//!
+//! The single deliberate abstraction is `Provider` (pi's StreamFn analog):
+//! the loop must not know which LLM serves it.
 
 pub mod openai;
 
 pub use openai::OpenAiProvider;
 
 use anyhow::Result;
-use serde_json::json;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use telepathy_lanes::{match_lane, LaneRegistry};
 
-pub const META_SYSTEM: &str = "You are the steering agent for Telepathy, a voice interface to coding agents. \
-Your ONLY job is managing conversation lanes: listing, switching, creating, reporting activity and statistics. \
-Rules: your output is spoken aloud through earbuds — be terse, no markdown, no code, no lists over five items. \
-Never discuss project content, never answer coding questions — if asked, tell the user to switch to the right \
-lane and ask there. Prefer calling tools over guessing. If the target lane is ambiguous, ask one short \
-clarifying question. When you switch lanes, confirm with the lane name.";
+// ---- the tool set as a closed type ----
 
-/// One callable tool, described as data (pi's `AgentTool` analog).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SteeringTool {
+    ListLanes,
+    ActiveLane,
+    SwitchLane,
+    CreateLane,
+    LaneStats,
+}
+
+impl SteeringTool {
+    /// The permanent surface. A policy test asserts this exact list.
+    pub const ALL: &'static [Self] = &[
+        Self::ListLanes,
+        Self::ActiveLane,
+        Self::SwitchLane,
+        Self::CreateLane,
+        Self::LaneStats,
+    ];
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|t| t.name() == name)
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::ListLanes => "list_lanes",
+            Self::ActiveLane => "active_lane",
+            Self::SwitchLane => "switch_lane",
+            Self::CreateLane => "create_lane",
+            Self::LaneStats => "lane_stats",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            Self::ListLanes => {
+                "List all conversation lanes with names, ids, and last-active times."
+            }
+            Self::ActiveLane => "Return the currently active lane.",
+            Self::SwitchLane => "Make a lane the active conversation. Fuzzy-matches the name.",
+            Self::CreateLane => "Create a new conversation lane and switch to it.",
+            Self::LaneStats => "Interaction counts and last-active times for all lanes.",
+        }
+    }
+
+    pub fn parameters(&self) -> serde_json::Value {
+        match self {
+            Self::ListLanes | Self::ActiveLane | Self::LaneStats => json!({
+                "type": "object", "properties": {}
+            }),
+            Self::SwitchLane | Self::CreateLane => json!({
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"]
+            }),
+        }
+    }
+}
+
+/// Typed arguments: args stop being `Value` at the boundary.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NameArgs {
+    pub name: String,
+}
+
+/// LLM-facing schema, derived from the enum so there is one source of truth.
+pub fn tools() -> Vec<ToolSpec> {
+    SteeringTool::ALL
+        .iter()
+        .map(|t| ToolSpec {
+            name: t.name(),
+            description: t.description(),
+            parameters: t.parameters(),
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone)]
 pub struct ToolSpec {
     pub name: &'static str,
     pub description: &'static str,
-    /// JSON schema for the arguments object.
     pub parameters: serde_json::Value,
 }
 
-pub fn tools() -> Vec<ToolSpec> {
-    vec![
-        ToolSpec {
-            name: "list_lanes",
-            description: "List all conversation lanes with names, ids, and last-active times.",
-            parameters: json!({"type":"object","properties":{}}),
-        },
-        ToolSpec {
-            name: "active_lane",
-            description: "Return the currently active lane.",
-            parameters: json!({"type":"object","properties":{}}),
-        },
-        ToolSpec {
-            name: "switch_lane",
-            description: "Make a lane the active conversation. Fuzzy-matches the name.",
-            parameters: json!({"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}),
-        },
-        ToolSpec {
-            name: "create_lane",
-            description: "Create a new conversation lane and switch to it.",
-            parameters: json!({"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}),
-        },
-        ToolSpec {
-            name: "lane_stats",
-            description: "Interaction counts and last-active times for all lanes.",
-            parameters: json!({"type":"object","properties":{}}),
-        },
-    ]
-}
-
-/// Execute one tool call against the registry. Returns text for the LLM.
-pub fn execute_tool(reg: &mut LaneRegistry, name: &str, args: &serde_json::Value) -> String {
-    match name {
-        "list_lanes" => {
+/// Execute a RESOLVED tool. String→enum resolution happens in the loop; this
+/// function has no unknown-tool path.
+pub fn execute_tool(reg: &mut LaneRegistry, tool: SteeringTool, args: &Value) -> String {
+    match tool {
+        SteeringTool::ListLanes => {
             let active = reg.active();
             reg.lanes
                 .iter()
@@ -73,30 +119,33 @@ pub fn execute_tool(reg: &mut LaneRegistry, name: &str, args: &serde_json::Value
                 .collect::<Vec<_>>()
                 .join("\n")
         }
-        "active_lane" => {
+        SteeringTool::ActiveLane => {
             let l = reg.active();
             format!("{} ({})", l.name, l.id)
         }
-        "switch_lane" => {
-            let name = args["name"].as_str().unwrap_or("");
-            match match_lane(name, reg) {
+        SteeringTool::SwitchLane => match serde_json::from_value::<NameArgs>(args.clone()) {
+            Ok(a) => match match_lane(&a.name, reg) {
                 Some(l) => {
                     reg.switch(&l.id);
                     format!("Active lane is now {}.", l.name)
                 }
                 None => format!(
-                    "No lane matching \"{name}\". Available: {}",
+                    "No lane matching \"{}\". Available: {}",
+                    a.name,
                     reg.lanes.iter().map(|l| l.name.as_str()).collect::<Vec<_>>().join(", ")
                 ),
+            },
+            Err(_) => "Argument 'name' is required.".into(),
+        },
+        SteeringTool::CreateLane => match serde_json::from_value::<NameArgs>(args.clone()) {
+            Ok(a) => {
+                let lane = reg.create(&a.name);
+                reg.switch(&lane.id);
+                format!("Created and switched to {}.", lane.name)
             }
-        }
-        "create_lane" => {
-            let name = args["name"].as_str().unwrap_or("");
-            let lane = reg.create(name);
-            reg.switch(&lane.id);
-            format!("Created and switched to {}.", lane.name)
-        }
-        "lane_stats" => reg
+            Err(_) => "Argument 'name' is required.".into(),
+        },
+        SteeringTool::LaneStats => reg
             .lanes
             .iter()
             .map(|l| {
@@ -109,15 +158,15 @@ pub fn execute_tool(reg: &mut LaneRegistry, name: &str, args: &serde_json::Value
             })
             .collect::<Vec<_>>()
             .join("\n"),
-        other => format!("unknown tool {other}"),
     }
 }
 
-// ---- provider abstraction (pi's StreamFn analog) ----
+// ---- provider abstraction (the one intentional interface) ----
 
 #[derive(Debug, Clone)]
 pub struct ToolCall {
     pub id: String,
+    /// Raw name from the model; resolved via SteeringTool::from_name in the loop.
     pub name: String,
     pub arguments: String,
 }
@@ -128,8 +177,6 @@ pub enum StepOutcome {
     ToolCalls(Vec<ToolCall>),
 }
 
-/// A completion turn: messages in (role/content/tool plumbing), one step out.
-/// Concrete providers (OpenAI-compatible, vLLM on the 3090, stubs) implement this.
 #[async_trait::async_trait]
 pub trait Provider: Send + Sync {
     async fn step(
@@ -140,15 +187,24 @@ pub trait Provider: Send + Sync {
     ) -> Result<StepOutcome>;
 }
 
-/// No-network provider for tests and offline boot: always returns a fixed line.
+/// No-network provider: offline boot + tests.
 pub struct NullProvider;
 
 #[async_trait::async_trait]
 impl Provider for NullProvider {
-    async fn step(&self, _system: &str, _tools: &[ToolSpec], _messages: &serde_json::Value) -> Result<StepOutcome> {
-        Ok(StepOutcome::Text("Steering agent online (no model configured).".into()))
+    async fn step(&self, _s: &str, _t: &[ToolSpec], _m: &serde_json::Value) -> Result<StepOutcome> {
+        Ok(StepOutcome::Text(
+            "Steering agent online (no model configured).".into(),
+        ))
     }
 }
+
+pub const META_SYSTEM: &str = "You are the steering agent for Telepathy, a voice interface to coding agents. \
+Your ONLY job is managing conversation lanes: listing, switching, creating, reporting activity and statistics. \
+Rules: your output is spoken aloud through earbuds — be terse, no markdown, no code, no lists over five items. \
+Never discuss project content, never answer coding questions — if asked, tell the user to switch to the right \
+lane and ask there. Prefer calling tools over guessing. If the target lane is ambiguous, ask one short \
+clarifying question. When you switch lanes, confirm with the lane name.";
 
 /// The loop: up to 4 tool rounds, then the final spoken text.
 pub async fn run<P: Provider>(
@@ -157,7 +213,7 @@ pub async fn run<P: Provider>(
     utterance: &str,
 ) -> Result<String> {
     let tools = tools();
-    let mut messages = serde_json::json!([
+    let mut messages = json!([
         { "role": "system", "content": META_SYSTEM },
         { "role": "user", "content": utterance },
     ]);
@@ -167,12 +223,27 @@ pub async fn run<P: Provider>(
             StepOutcome::Text(text) => return Ok(text),
             StepOutcome::ToolCalls(calls) => {
                 for call in calls {
-                    let args: serde_json::Value =
+                    // resolve ONCE here; execute_tool never sees strings
+                    let Some(tool) = SteeringTool::from_name(&call.name) else {
+                        messages.as_array_mut().unwrap().push(json!({
+                            "role": "assistant",
+                            "tool_calls": [{
+                                "id": call.id, "name": call.name, "arguments": call.arguments
+                            }]
+                        }));
+                        messages.as_array_mut().unwrap().push(json!({
+                            "role": "tool", "content": format!("unknown tool {}", call.name)
+                        }));
+                        continue;
+                    };
+                    let args: Value =
                         serde_json::from_str(&call.arguments).unwrap_or(json!({}));
-                    let result = execute_tool(reg, &call.name, &args);
+                    let result = execute_tool(reg, tool, &args);
                     messages.as_array_mut().unwrap().push(json!({
                         "role": "assistant",
-                        "tool_calls": [{ "id": call.id, "name": call.name, "arguments": call.arguments }]
+                        "tool_calls": [{
+                            "id": call.id, "name": call.name, "arguments": call.arguments
+                        }]
                     }));
                     messages.as_array_mut().unwrap().push(json!({
                         "role": "tool", "content": result
