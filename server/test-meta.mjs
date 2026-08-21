@@ -90,3 +90,18 @@ await post("/api/lanes/active", { id: "telepathy:direct" });
 const st3 = await (await fetch(base + "/api/state")).json();
 check("api: switch via tools", st3.active === "direct");
 srv.kill();
+
+// 7. steering agent tool executor (pure, no network)
+import { executeTool } from "./dist/meta-agent.js";
+const reg3 = {
+  lanes: [
+    { id: "telepathy:direct", name: "direct", createdAt: "", lastActive: "", interactions: 5 },
+    { id: "telepathy:repo:x", name: "x", createdAt: "", lastActive: "" },
+  ],
+  activeId: "telepathy:direct",
+  previousId: "telepathy:direct",
+};
+check("tool: list_lanes", executeTool(reg3, "list_lanes", {}).includes("(ACTIVE)"));
+check("tool: switch fuzzy", executeTool(reg3, "switch_lane", { name: "x" }).includes("now x"));
+check("tool: create", executeTool(reg3, "create_lane", { name: "new thing" }).includes("Created"));
+check("tool: stats", executeTool(reg3, "lane_stats", {}).includes("direct: 5 interactions"));

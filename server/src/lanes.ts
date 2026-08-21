@@ -15,6 +15,7 @@ export interface Lane {
   name: string;        // spoken/display name ("kerchunk")
   createdAt: string;
   lastActive: string;
+  interactions?: number; // lifetime voice-interaction count (for stats tools)
 }
 
 export interface LaneRegistry {

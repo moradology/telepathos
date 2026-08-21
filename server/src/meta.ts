@@ -36,7 +36,7 @@ function levenshtein(a: string, b: string): number {
 /** Fuzzy lane lookup: exact → substring → bounded edit distance.
  *  Space-stripped comparison handles STT mangling of multi-word names
  *  ("kirk chunk" → "kerchunk"). */
-function matchLane(text: string, reg: LaneRegistry): Lane | null {
+export function matchLane(text: string, reg: LaneRegistry): Lane | null {
   const t = normalize(text);
   const tFlat = t.replace(/ /g, "");
   if (!t) return null;

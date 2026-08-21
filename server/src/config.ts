@@ -11,5 +11,9 @@ export const config = {
   /** Agent-facing lane API (Hermes tools). localhost: only the same box needs it. */
   apiPort: Number(process.env.TELEPATHY_API_PORT ?? 8788),
   apiHost: process.env.TELEPATHY_API_HOST ?? "127.0.0.1",
+  /** Steering agent (catches what the meta grammar misses). Unset = disabled,
+   *  grammar-miss falls back to the spoken help text. */
+  metaModel: process.env.TELEPATHY_META_MODEL,
+  metaBaseUrl: process.env.TELEPATHY_META_BASE_URL ?? "https://api.openai.com/v1",
   // NOTE: no TTS config — the phone speaks replies via its own TTS engine.
 };

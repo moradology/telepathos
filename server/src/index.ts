@@ -6,6 +6,7 @@ import { parseControl, assertNever } from "./protocol.js";
 import { InteractionState, InteractionEvent, transition, micOpen } from "./fsm.js";
 import { loadLanes, saveLanes, activeLane, switchLane, createLane, LaneRegistry } from "./lanes.js";
 import { parseMeta, MetaAction } from "./meta.js";
+import { runMetaAgent } from "./meta-agent.js";
 import { startApiServer } from "./api.js";
 
 /**
@@ -167,8 +168,18 @@ async function handleUtterance(ws: WebSocket, state: ClientState) {
     // ---- meta agent plane: double-pinch or codeword routes here, never to Hermes ----
     const codeword = text.match(/^(meta|telepathy)[,: ]+(.*)$/i);
     if (state.metaMode || codeword) {
-      const action = parseMeta(codeword ? codeword[2] : text, lanes);
-      const reply = executeMeta(action);
+      const stripped = codeword ? codeword[2] : text;
+      const action = parseMeta(stripped, lanes);
+      let reply: string;
+      if (action.op === "unknown" && config.metaModel) {
+        // grammar miss → steering agent (LLM with lane tools)
+        reply = await runMetaAgent(
+          { baseUrl: config.metaBaseUrl, apiKey: process.env.OPENAI_API_KEY ?? "", model: config.metaModel },
+          lanes, stripped,
+        );
+      } else {
+        reply = executeMeta(action);
+      }
       saveLanes(lanes);
       for await (const delta of chunks(reply)) {
         if (state.cancelRequested) break;
@@ -186,6 +197,8 @@ async function handleUtterance(ws: WebSocket, state: ClientState) {
   } catch (e) {
     send(ws, { type: "error", message: String((e as Error).message ?? e) });
   } finally {
+    const lane = lanes.lanes.find((l) => l.id === lanes.activeId);
+    if (lane) lane.interactions = (lane.interactions ?? 0) + 1;
     state.metaMode = false; // one-shot plane
     // whatever happened, land back on listening so the mic can reopen on next pinch
     if (!micOpen(state.fsm)) step(ws, state, { kind: "CANCEL" });
