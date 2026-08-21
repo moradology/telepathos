@@ -27,12 +27,22 @@ object LinkState {
     private val ref = AtomicReference(ConnectionState())
     private val listeners = CopyOnWriteArraySet<(ConnectionState) -> Unit>()
 
+    /** Latest interaction phase broadcast by the server ("listening", "capturing", …). */
+    @Volatile var phase: String = "—"
+        private set
+
     val current: ConnectionState get() = ref.get()
 
     fun onChange(fn: (ConnectionState) -> Unit) = listeners.add(fn)
+    fun onPhaseChange(fn: (String) -> Unit) = phaseListeners.add(fn)
+    private val phaseListeners = CopyOnWriteArraySet<(String) -> Unit>()
 
     fun setWs(up: Boolean) = update { it.copy(wsUp = up) }
     fun setBuds(on: Boolean) = update { it.copy(budsOn = on) }
+
+    fun setPhase(p: String) {
+        if (phase != p) { phase = p; phaseListeners.forEach { it(p) } }
+    }
 
     private fun update(transform: (ConnectionState) -> ConnectionState) {
         var changed = false

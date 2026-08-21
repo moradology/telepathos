@@ -313,6 +313,7 @@ class AudioCaptureService : Service() {
                     playCue(ToneGenerator.TONE_CDMA_PIP, 80) // "heard you — thinking"
                 }
                 lastPhase = msg.value
+                LinkState.setPhase(msg.value)
                 TriggerLog.record(this, "· ${msg.value}")
             }
             ServerMsg.Ready -> TriggerLog.record(this, "server ready")

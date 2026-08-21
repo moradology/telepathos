@@ -1,12 +1,14 @@
 package dev.telepathy
 
 import android.Manifest
-import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
+import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Bundle
 import android.provider.Settings
+import android.text.Editable
+import android.text.TextWatcher
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -17,58 +19,89 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
 /**
- * Setup doctor (features.md M1): every known failure mode gets a live status row.
- * Plus the mic-capture controls and the event log.
+ * Diagnostic console (features.md M1). Design rules:
+ * - monospace everything; it's a terminal, not a marketing page
+ * - status is a fixed set of named checks with ✓/✗ and nothing else
+ * - the current interaction phase is the biggest thing on screen — it's the
+ *   answer to "why is nothing happening" 90% of the time
+ * - log is newest-first so live events are visible without scrolling
  */
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var logView: TextView
-    private lateinit var urlInput: EditText
+    private lateinit var phaseView: TextView
     private lateinit var statusView: TextView
-    private val rows = mutableListOf<String>()
+    private lateinit var urlInput: EditText
+    private lateinit var logView: TextView
+
+    private val green = Color.parseColor("#2E7D32")
+    private val red = Color.parseColor("#C62828")
+    private val dim = Color.parseColor("#666666")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val pad = (16 * resources.displayMetrics.density).toInt()
-        val root = ScrollView(this)
+        val dp = resources.displayMetrics.density
+        fun px(v: Int) = (v * dp).toInt()
+        val mono = Typeface.MONOSPACE
+
+        val scroll = ScrollView(this).apply { setBackgroundColor(Color.WHITE) }
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad, pad, pad)
+            setPadding(px(16), px(16), px(16), px(16))
         }
-        root.addView(col)
-        setContentView(root)
+        scroll.addView(col)
+        setContentView(scroll)
 
-        statusView = TextView(this).apply { textSize = 14f }
+        fun label(text: String, size: Float, color: Int) = TextView(this).apply {
+            this.text = text; textSize = size; setTextColor(color); typeface = mono
+        }
+
+        // header + phase
+        col.addView(label("TELEPATHY", 18f, Color.BLACK))
+        phaseView = TextView(this).apply {
+            typeface = mono; textSize = 26f; setTextColor(Color.parseColor("#0D47A1"))
+            text = "· listening ·"
+        }
+        col.addView(phaseView)
+
+        col.addView(label("─── status ────────────────", 12f, dim))
+        statusView = TextView(this).apply { typeface = mono; textSize = 14f }
+        col.addView(statusView)
+
+        // server control
+        col.addView(label("─── server ────────────────", 12f, dim))
         urlInput = EditText(this).apply {
-            hint = "ws://<mac-ip>:8787"
+            typeface = mono; textSize = 13f
+            hint = "ws://<host>:8787  (tailscale ok)"
             setText(getSharedPreferences("cfg", MODE_PRIVATE).getString("server", ""))
         }
-        val startBtn = Button(this).apply { text = "Start listening" }
-        val stopBtn = Button(this).apply { text = "Stop" }
-        val assistBtn = Button(this).apply { text = "Open assistant settings" }
-        logView = TextView(this).apply { setTextIsSelectable(true); textSize = 12f }
-
-        col.addView(statusView)
         col.addView(urlInput)
-        col.addView(startBtn)
-        col.addView(stopBtn)
-        col.addView(assistBtn)
-        col.addView(TextView(this).apply {
-            text = """
-                Shokz app checklist:
-                • disable Smart Wear Detection while testing
-                  (controls are dead unless the bud thinks it's seated!)
-                • map pinch → voice assistant
-                • taps → next / previous / play-pause
-            """.trimIndent()
-            textSize = 13f
-        })
+        val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val startBtn = Button(this).apply { text = "talk" }
+        val stopBtn = Button(this).apply { text = "stop" }
+        val assistBtn = Button(this).apply { text = "assistant…" }
+        buttons.addView(startBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        buttons.addView(stopBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        buttons.addView(assistBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        col.addView(buttons)
+
+        // gestures reference (one line each, no prose)
+        col.addView(label("─── gestures ──────────────", 12f, dim))
+        col.addView(label(
+            "pinch      talk (wait for beep)\n" +
+            "tap        capturing: send now | else: stop\n" +
+            "2× tap     capturing: drop | else: stop\n" +
+            "3× tap     replay last reply", 12f, Color.DKGRAY))
+
+        // log
+        col.addView(label("─── log ───────────────────", 12f, dim))
+        logView = TextView(this).apply {
+            typeface = mono; textSize = 11f; setTextColor(dim); setTextIsSelectable(true)
+        }
         col.addView(logView)
 
         startBtn.setOnClickListener {
-            getSharedPreferences("cfg", MODE_PRIVATE).edit()
-                .putString("server", urlInput.text.toString().trim()).apply()
+            saveUrl()
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
                 != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 1)
@@ -78,34 +111,54 @@ class MainActivity : AppCompatActivity() {
             }
         }
         stopBtn.setOnClickListener { stopService(Intent(this, AudioCaptureService::class.java)) }
-        assistBtn.setOnClickListener {
-            startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
-        }
+        assistBtn.setOnClickListener { startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)) }
+        urlInput.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) { refreshStatus() }
+            override fun beforeTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) {}
+            override fun onTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) {}
+        })
 
-        refreshStatus()
-        LinkState.onChange { runOnUiThread { refreshStatus() } }
+        refreshAll()
+        LinkState.onChange { runOnUiThread { refreshAll() } }
+        LinkState.onPhaseChange { runOnUiThread { refreshAll() } }
         TriggerLog.onChange { runOnUiThread { refreshLog() } }
     }
 
     override fun onResume() {
         super.onResume()
-        refreshStatus() // user may have toggled the assistant setting and come back
+        refreshAll() // user may have toggled assistant setting and come back
     }
 
-    private fun refreshStatus() {
+    private fun saveUrl() {
+        getSharedPreferences("cfg", MODE_PRIVATE).edit()
+            .putString("server", urlInput.text.toString().trim()).apply()
+    }
+
+    private fun refreshAll() = refreshStatus().also { refreshLog() }
+
+    private fun refreshStatus(): Unit {
         val s = LinkState.current
-        rows.clear()
-        rows.add(if (AssistantChecks.isDefaultAssistant(this))
-            "✓ default digital assistant" else "✗ NOT default digital assistant")
-        rows.add(if (s.wsUp) "✓ server connected" else "✗ server not connected")
-        rows.add(if (s.budsOn) "✓ earbuds detected" else "✗ no earbuds detected")
+        val checks = listOf(
+            "mic permission" to (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                    == PackageManager.PERMISSION_GRANTED),
+            "assistant default" to AssistantChecks.isDefaultAssistant(this),
+            "server link" to s.wsUp,
+            "earbuds" to s.budsOn,
+        )
+        statusView.text = checks.joinToString("\n") { (name, ok) ->
+            val mark = if (ok) "✓" else "✗"
+            "$mark $name"
+        }
+        statusView.setTextColor(if (checks.all { it.second }) green else red)
 
-        // mic permission is a precondition for everything else
-        val micOk = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
-                PackageManager.PERMISSION_GRANTED
-        rows.add(if (micOk) "✓ microphone permission" else "✗ no microphone permission")
-
-        statusView.text = "TELEPATHY — setup\n\n" + rows.joinToString("\n")
+        phaseView.text = "· ${LinkState.phase} ·"
+        phaseView.setTextColor(when (LinkState.phase) {
+            "listening" -> green
+            "capturing" -> Color.parseColor("#E65100")   // recording: attention
+            "processing", "echoing" -> Color.parseColor("#0D47A1")
+            "speaking" -> Color.parseColor("#6A1B9A")
+            else -> dim
+        })
     }
 
     override fun onRequestPermissionsResult(
@@ -116,11 +169,10 @@ class MainActivity : AppCompatActivity() {
             Foreground.ensureChannel(this)
             startForegroundService(Intent(this, AudioCaptureService::class.java))
         }
-        refreshStatus()
+        refreshAll()
     }
 
     private fun refreshLog() {
-        logView.text = "Events:\n${TriggerLog.load(this).ifEmpty { "(none yet)" }}"
-        refreshStatus()
+        logView.text = TriggerLog.load(this).ifEmpty { "(no events yet)" }
     }
 }
