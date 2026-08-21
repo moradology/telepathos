@@ -4,6 +4,8 @@ import { EnergyVad } from "./vad.js";
 import { transcribe, Transcript } from "./transcriber.js";
 import { parseControl, assertNever } from "./protocol.js";
 import { InteractionState, InteractionEvent, transition, micOpen } from "./fsm.js";
+import { loadLanes, saveLanes, activeLane, switchLane, createLane, LaneRegistry } from "./lanes.js";
+import { parseMeta, MetaAction } from "./meta.js";
 
 /**
  * telepathy bridge — v0.1 stub brain.
@@ -29,7 +31,10 @@ interface ClientState {
   authenticated: boolean;
   cancelRequested: boolean; // double-tap stop (features.md M3)
   lastReply: string | null; // for triple-tap replay
+  metaMode: boolean;        // double-pinch: next utterance goes to the meta agent
 }
+
+const lanes: LaneRegistry = loadLanes();
 
 const wss = new WebSocketServer({ port: config.port, host: "0.0.0.0", maxPayload: 1 << 20 });
 
@@ -44,6 +49,7 @@ wss.on("connection", (ws) => {
     authenticated: !process.env.TELEPATHY_TOKEN, // no token configured → open
     cancelRequested: false,
     lastReply: null,
+    metaMode: false,
   };
   console.log("client connected");
   // no token configured → open; say hello immediately per protocol
@@ -156,17 +162,29 @@ async function handleUtterance(ws: WebSocket, state: ClientState) {
 
     if (state.cancelRequested) return finish(ws, state);
 
-    const reply = await respond(text);
-    for await (const delta of chunks(reply)) {
-      if (state.cancelRequested) break;
-      send(ws, { type: "agent_delta", text: delta });
+    // ---- meta agent plane: double-pinch or codeword routes here, never to Hermes ----
+    const codeword = text.match(/^(meta|telepathy)[,: ]+(.*)$/i);
+    if (state.metaMode || codeword) {
+      const action = parseMeta(codeword ? codeword[2] : text, lanes);
+      const reply = executeMeta(action);
+      saveLanes(lanes);
+      for await (const delta of chunks(reply)) {
+        if (state.cancelRequested) break;
+        send(ws, { type: "agent_delta", text: delta });
+      }
+      finish(ws, state, reply);
+    } else {
+      const reply = await respond(text, state);
+      for await (const delta of chunks(reply)) {
+        if (state.cancelRequested) break;
+        send(ws, { type: "agent_delta", text: delta });
+      }
+      finish(ws, state, reply);
     }
-    // agent_end means the full reply text is out; the PHONE speaks it
-    // (on-device TTS) and owns playback completion.
-    finish(ws, state, reply);
   } catch (e) {
     send(ws, { type: "error", message: String((e as Error).message ?? e) });
   } finally {
+    state.metaMode = false; // one-shot plane
     // whatever happened, land back on listening so the mic can reopen on next pinch
     if (!micOpen(state.fsm)) step(ws, state, { kind: "CANCEL" });
     send(ws, { type: "listening" });
@@ -229,6 +247,12 @@ function onControl(ws: WebSocket, state: ClientState, raw: string) {
       }
       break;
     }
+    case "meta_mode": {
+      // double-pinch: arm the meta plane for the next utterance
+      state.metaMode = true;
+      console.log("meta mode armed");
+      break;
+    }
     default:
       assertNever(msg);
   }
@@ -252,8 +276,51 @@ async function replayLast(ws: WebSocket, state: ClientState) {
   }
 }
 
-/** Placeholder brain. Replace with Hermes/pi call. */
-async function respond(text: string): Promise<string> {
+/**
+ * Execute a parsed meta action against the lane registry.
+ * No Hermes involvement — this plane must work even when the agent is down.
+ */
+function executeMeta(action: MetaAction): string {
+  switch (action.op) {
+    case "switch": {
+      const lane = switchLane(lanes, action.lane.id);
+      return `Switched to ${lane.name}.`;
+    }
+    case "back": {
+      const lane = switchLane(lanes, action.lane.id);
+      return `Back to ${lane.name}.`;
+    }
+    case "list": {
+      const active = activeLane(lanes);
+      const list = lanes.lanes
+        .map((l) => `${l.name}${l.id === active.id ? " (active)" : ""}`)
+        .join(", ");
+      return `Conversations: ${list}.`;
+    }
+    case "new": {
+      const lane = createLane(lanes, action.name);
+      switchLane(lanes, lane.id);
+      return `Created ${lane.name}. You're in it.`;
+    }
+    case "brief": {
+      const lane = action.lane ?? activeLane(lanes);
+      const age = Math.round((Date.now() - new Date(lane.lastActive).getTime()) / 3600000);
+      const ageText = age < 1 ? "under an hour" : `${age} hour${age > 1 ? "s" : ""}`;
+      if (lane.id === "telepathy:direct") {
+        return `Direct line to Hermes. No project context.`;
+      }
+      return `Lane ${lane.name}. Last active ${ageText} ago. Full briefing arrives with the Hermes connector.`;
+    }
+    case "unknown":
+      return "Meta commands: switch to name, list conversations, new conversation for name, brief, switch back.";
+  }
+}
+
+/**
+ * Placeholder brain. Replace with the Hermes relay call; the lane's chat_id
+ * (activeLane(lanes).id) is what stamps the relay MessageEvent.
+ */
+async function respond(text: string, _state: ClientState): Promise<string> {
   return `Heard you say: ${text}`;
 }
 

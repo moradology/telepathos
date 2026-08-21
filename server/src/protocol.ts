@@ -24,7 +24,12 @@ export interface UtteranceEnd {
   tag: "utterance_end";
 }
 
-export type ControlMsg = Hello | Command | UtteranceEnd;
+/** Double-pinch: next utterance goes to the meta agent, not Hermes. */
+export interface MetaMode {
+  tag: "meta_mode";
+}
+
+export type ControlMsg = Hello | Command | UtteranceEnd | MetaMode;
 
 /** Compile-time exhaustiveness guard: if a variant is unhandled, this fails to build. */
 export function assertNever(x: never): never {
@@ -54,6 +59,8 @@ export function parseControl(raw: string): ControlMsg | null {
         : null;
     case "utterance_end":
       return { tag: "utterance_end" };
+    case "meta_mode":
+      return { tag: "meta_mode" };
     default:
       return null;
   }

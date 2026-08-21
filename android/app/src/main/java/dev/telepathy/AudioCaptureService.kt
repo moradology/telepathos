@@ -62,6 +62,9 @@ class AudioCaptureService : Service() {
     @Volatile private var wantConnection = false
     private var reconnectAttempt = 0
 
+    /** Set by double-pinch: next capture opens in meta mode. */
+    @Volatile private var pendingMeta = false
+
     // ---- capture start choreography (SCO-first, cued) ----
 
     @Volatile private var lastPhase = "listening"
@@ -157,6 +160,7 @@ class AudioCaptureService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(Foreground.notifyId(), Foreground.start(this, "pinch to talk"))
+        if (intent?.getBooleanExtra(EXTRA_META, false) == true) pendingMeta = true
         // Every pinch lands here (idempotent while running). It means "I want to talk":
         if (!wantConnection) {
             wantConnection = true
@@ -191,8 +195,16 @@ class AudioCaptureService : Service() {
         val socket = ws ?: return false
         if (!captureRequested || mic.isOpen) return false
         return if (mic.open { chunk -> socket.send(chunk.toByteString()) }) {
-            playCue(ToneGenerator.TONE_PROP_BEEP, 120)   // "go ahead"
-            updateNotification()
+            if (pendingMeta) {
+                pendingMeta = false
+                socket.send("""{"type":"meta_mode"}""")
+                playCue(ToneGenerator.TONE_PROP_BEEP2, 90)
+                mainHandler.postDelayed({ playCue(ToneGenerator.TONE_PROP_BEEP2, 90) }, 180)
+                updateNotification("meta agent — state your command")
+            } else {
+                playCue(ToneGenerator.TONE_PROP_BEEP, 120)   // "go ahead"
+                updateNotification()
+            }
             true
         } else {
             announcer.say("Microphone unavailable.")
@@ -215,8 +227,8 @@ class AudioCaptureService : Service() {
     }
 
     /** Keep the persistent notification truthful (M4); wording comes from ConnectionState. */
-    private fun updateNotification() {
-        Foreground.update(this, LinkState.current.summary)
+    private fun updateNotification(text: String? = null) {
+        Foreground.update(this, text ?: LinkState.current.summary)
     }
 
     // ---- connection ----
@@ -342,5 +354,8 @@ class AudioCaptureService : Service() {
         }, 800)
     }
 
-    companion object { private const val TAG = "Telepathy" }
+    companion object {
+        private const val TAG = "Telepathy"
+        const val EXTRA_META = "meta"
+    }
 }

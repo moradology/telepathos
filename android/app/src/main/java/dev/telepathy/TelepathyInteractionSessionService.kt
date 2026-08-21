@@ -2,6 +2,7 @@ package dev.telepathy
 
 import android.content.Intent
 import android.os.Bundle
+import android.os.SystemClock
 import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
 import android.util.Log
@@ -22,15 +23,24 @@ class TelepathyInteractionSession(context: android.content.Context) : VoiceInter
 
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
-        Log.i("Telepathy", "SESSION SHOWN — pinch works! flags=$showFlags")
-        TriggerLog.record(context, "pinch → starting capture")
+        // Double-pinch detection: two assist triggers within 700ms = meta agent.
+        // One pinch = talk to the active lane; two = talk to the meta plane.
+        val now = SystemClock.elapsedRealtime()
+        val isMeta = now - lastPinch < 700
+        lastPinch = now
+        Log.i("Telepathy", "pinch (meta=$isMeta)")
+        TriggerLog.record(context, if (isMeta) "double pinch → meta" else "pinch → capture")
 
-        // THE LINK (B1): pinch = "I want to talk". Voice-interaction sessions are an
-        // exempted context for background FGS starts. Idempotent: if the service is
-        // already running, onStartCommand's wantConnection guard makes this a no-op.
+        // Voice-interaction sessions are an exempted context for background FGS
+        // starts. Idempotent: onStartCommand's guards make repeat pinches cheap.
         val intent = Intent(context, AudioCaptureService::class.java)
+        intent.putExtra(AudioCaptureService.EXTRA_META, isMeta)
         context.startForegroundService(intent)
 
         hide()
+    }
+
+    companion object {
+        @Volatile private var lastPinch = 0L
     }
 }
