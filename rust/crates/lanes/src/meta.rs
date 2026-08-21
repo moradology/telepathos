@@ -4,6 +4,7 @@
 
 use crate::{Lane, LaneRegistry};
 
+#[derive(Debug, Clone)]
 pub enum MetaAction {
     Switch(Lane),
     List,
@@ -146,4 +147,49 @@ pub fn parse_meta(raw: &str, reg: &LaneRegistry) -> MetaAction {
     }
 
     MetaAction::Unknown
+}
+
+/// Apply a parsed action to the registry and produce the spoken confirmation.
+/// The daemon (and any other front-end) calls this — one executor everywhere.
+pub fn execute(reg: &mut LaneRegistry, action: MetaAction) -> String {
+    match action {
+        MetaAction::Switch(lane) => {
+            let name = lane.name.clone();
+            reg.switch(&lane.id);
+            format!("Switched to {name}.")
+        }
+        MetaAction::List => {
+            let active_id = reg.active_id.clone();
+            let list = reg
+                .lanes
+                .iter()
+                .map(|l| {
+                    if l.id == active_id {
+                        format!("{} (active)", l.name)
+                    } else {
+                        l.name.clone()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("Conversations: {list}.")
+        }
+        MetaAction::New(name) => {
+            let lane = reg.create(&name);
+            reg.switch(&lane.id);
+            format!("Created {}. You're in it.", lane.name)
+        }
+        MetaAction::Brief(lane_opt) => {
+            let lane = lane_opt.unwrap_or_else(|| reg.active().clone());
+            if lane.id == "telepathy:direct" {
+                return "Direct line to Hermes. No project context.".into();
+            }
+            let age = crate::age_summary(&lane.last_active);
+            format!(
+                "Lane {}. Last active {}. Full briefing arrives with the Hermes connector.",
+                lane.name, age
+            )
+        }
+        MetaAction::Unknown => "Meta commands: switch to name, list conversations, new conversation for name, brief.".into(),
+    }
 }

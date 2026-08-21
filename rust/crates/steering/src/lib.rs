@@ -1,8 +1,11 @@
 //! The steering agent loop, pi-style: the loop is provider-agnostic.
 //! `Provider` is injected (StreamFn analog); tools are typed data.
 
+pub mod openai;
+
+pub use openai::OpenAiProvider;
+
 use anyhow::Result;
-use async_trait::async_trait;
 use serde_json::json;
 use telepathy_lanes::{match_lane, LaneRegistry};
 

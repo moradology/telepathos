@@ -4,7 +4,7 @@
 pub mod meta;
 pub mod time;
 
-pub use meta::{match_lane, parse_meta, MetaAction};
+pub use meta::{execute, match_lane, parse_meta, MetaAction};
 pub use time::{age_summary, now_iso};
 
 use serde::{Deserialize, Serialize};
