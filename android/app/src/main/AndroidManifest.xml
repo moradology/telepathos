@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Required to be eligible as the default voice assistant -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <application
+        android:label="Telepathy"
+        android:theme="@android:style/Theme.Material.Light">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          The make-or-break component. If the Shokz pinch gesture launches the
+          phone's voice assistant and Telepathy is set as the default assistant
+          (Settings > Apps > Default apps > Digital assistant app), this service
+          gets bound and onPrepareShow()/onShowSession() fire. That is the whole
+          test: log it, beep, and put it on screen.
+        -->
+        <service
+            android:name=".TelepathyVoiceInteractionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.voice"
+                android:resource="@xml/interaction_service" />
+        </service>
+
+        <!-- Launched by the system when an assist gesture reaches us -->
+        <service
+            android:name=".TelepathyInteractionSessionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION" />
+
+        <!-- Foreground mic capture + WebSocket client -->
+        <service
+            android:name=".AudioCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+    </application>
+</manifest>

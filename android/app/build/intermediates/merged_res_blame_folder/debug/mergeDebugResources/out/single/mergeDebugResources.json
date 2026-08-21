@@ -1,0 +1,6 @@
+[
+    {
+        "merged": "dev.telepathy.app-debug-24:/xml_interaction_service.xml.flat",
+        "source": "dev.telepathy.app-main-26:/xml/interaction_service.xml"
+    }
+]
