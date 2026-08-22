@@ -9,21 +9,42 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use telepathy_lanes::LaneRegistry;
 
+mod relay;
+
+use relay::RelayState;
+
 struct AppState {
     reg: Mutex<LaneRegistry>,
     path: PathBuf,
+    relay: Arc<RelayState>,
+    msg_seq: std::sync::atomic::AtomicU64,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let lanes_path = std::env::var("TELEPATHY_LANES").unwrap_or_else(|_| "lanes.json".into());
+    let relay = Arc::new(RelayState::default());
+    let secrets: Vec<String> = std::env::var("TELEPATHY_RELAY_SECRETS")
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
     let state = Arc::new(AppState {
         reg: Mutex::new(LaneRegistry::load(&PathBuf::from(&lanes_path))),
         path: PathBuf::from(lanes_path),
+        relay: relay.clone(),
+        msg_seq: std::sync::atomic::AtomicU64::new(0),
     });
+
+    let relay_router = relay::router(relay.clone(), secrets);
 
     let app = Router::new()
         .route("/api/state", get(get_state))
+        .route("/api/message", post(post_message))
+        .route("/api/delivery", get(get_delivery))
+        .nest_service("/relay", relay_router)
         .route("/api/lanes", post(create_lane))
         .route("/api/lanes/active", post(set_active))
         .route("/api/lanes/touch", post(touch))
@@ -39,6 +60,43 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+/// Phone bridge → lane: wrap as MessageEvent and push to the gateway.
+async fn post_message(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> Json<serde_json::Value> {
+    let lane_id = body["lane_id"].as_str().unwrap_or("telepathy:direct").to_string();
+    let text = body["text"].as_str().unwrap_or_default().to_string();
+    if text.is_empty() {
+        return Json(serde_json::json!({"error": "text required"}));
+    }
+    let lane_name = {
+        let reg = state.reg.lock().await;
+        reg.lanes.iter().find(|l| l.id == lane_id).map(|l| l.name.clone()).unwrap_or_else(|| lane_id.clone())
+    };
+    let seq = state.msg_seq.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let event = relay::message_event(&lane_id, &lane_name, &text, seq);
+    match state.relay.push_inbound(&event) {
+        Ok(()) => Json(serde_json::json!({"ok": true, "queued": false})),
+        Err(e) => Json(serde_json::json!({"ok": false, "error": e.to_string()})),
+    }
+}
+
+/// Phone bridge polls for gateway replies (chat_id-filtered by caller).
+#[derive(serde::Deserialize)]
+struct DeliveryQuery {
+    #[serde(default)]
+    after: u64,
+}
+
+async fn get_delivery(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(q): axum::extract::Query<DeliveryQuery>,
+) -> Json<serde_json::Value> {
+    let items = state.relay.deliveries_after(q.after);
+    Json(serde_json::json!({ "deliveries": items }))
 }
 
 async fn get_state(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
