@@ -4,6 +4,22 @@
 gateway:
   relay_url: "http://host.docker.internal:8790"
 
+# Spoken-output policy: the relay lane's agent is heard, not read.
+# Allowlist style — anything not listed never loads on this platform
+# (verify names against `hermes tools` for the installed version).
+platform_toolsets:
+  relay:
+    - files          # read code/config context
+    - terminal       # run commands (the point)
+    - memory         # remember preferences across lanes
+    - delegation     # spawn subagents for parallel work
+    - cron           # schedule jobs that brief you later
+
+agent:
+  disabled_toolsets:
+    - browser        # nobody browses by ear
+    - vision         # outputs aren't speakable
+
 platforms:
   relay:
     extra:
