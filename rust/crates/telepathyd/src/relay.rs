@@ -99,6 +99,25 @@ impl RelayState {
 
     /// Deliveries after the caller's cursor. With `consume`, returned entries
     /// are removed — the caller has taken responsibility for speaking them.
+    /// Items awaiting pickup for one lane, oldest first.
+    pub fn pending_for(&self, lane_id: &str) -> Vec<Delivery> {
+        self.deliveries
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|d| d.chat_id == lane_id)
+            .cloned()
+            .collect()
+    }
+
+    /// Remove a lane's consumed items (after they've been spoken).
+    pub fn consume_lane(&self, lane_id: &str) {
+        let mut q = self.deliveries.lock().unwrap();
+        q.retain(|d| d.chat_id != lane_id);
+        drop(q);
+        self.persist();
+    }
+
     pub fn pending_count(&self, lane_id: &str) -> usize {
         self.deliveries
             .lock()

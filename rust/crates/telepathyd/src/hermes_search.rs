@@ -60,3 +60,32 @@ fn now_secs() -> u64 {
         .map(|d| d.as_secs())
         .unwrap_or(0)
 }
+
+/// Latest non-empty session title per chat_id — lane-name enrichment.
+pub fn latest_titles(db_path: &str) -> Vec<(String, String)> {
+    let con = match Connection::open_with_flags(
+        db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    ) {
+        Ok(c) => c,
+        Err(_) => return vec![],
+    };
+    let sql = "
+        SELECT chat_id, title FROM (
+            SELECT chat_id, title, MAX(last_activity_at) AS lat
+            FROM sessions
+            WHERE title IS NOT NULL AND title != ''
+            GROUP BY chat_id
+        ) ORDER BY lat DESC LIMIT 50";
+    let mut stmt = match con.prepare(sql) {
+        Ok(s) => s,
+        Err(_) => return vec![],
+    };
+    let out: Vec<(String, String)> = match stmt.query_map([], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    }) {
+        Ok(rows) => rows.flatten().collect(),
+        Err(_) => vec![],
+    };
+    out
+}

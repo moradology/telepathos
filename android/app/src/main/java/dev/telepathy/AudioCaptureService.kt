@@ -15,6 +15,8 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import android.view.KeyEvent
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -95,10 +97,10 @@ class AudioCaptureService : Service() {
                 captureRequested && !mic.isOpen) {
                 // only stand down the fallback once the mic actually opened;
                 // if the socket isn't up yet, onOpen will re-run requestCaptureStart
-                if (openMicNow()) {
-                    scoPending = false
-                    mainHandler.removeCallbacks(scoFallback)
-                }
+                // fire-and-forget: completion (or failure) re-runs via onOpen/retry
+                openMicNow()
+                scoPending = false
+                mainHandler.removeCallbacks(scoFallback)
             }
         }
     }
@@ -191,23 +193,35 @@ class AudioCaptureService : Service() {
     }
 
     /** @return true iff the mic actually opened (false: no socket / init failure). */
-    private fun openMicNow(): Boolean {
-        val socket = ws ?: return false
-        if (!captureRequested || mic.isOpen) return false
-        // Before opening the floor: check for undelivered lane updates (cron results,
-        // async agent replies). Speak them first, THEN cue and open — so the user's
-        // first word is never stepped on by our own speech.
+    private fun openMicNow() {
+        val socket = ws ?: return
+        if (!captureRequested || mic.isOpen) return
+        // Before opening the floor: fetch undelivered lane items (cron results,
+        // async replies), SPEAK them while the mic is still closed — our own voice
+        // must never trigger VAD — then cue and open.
         if (!pendingMeta) {
-            fetchPendingCount { count ->
-                mainHandler.post {
-                    val briefing = if (count > 0) "While you were away: $count update" +
-                            (if (count > 1) "s" else "") + ". I'll read them after your next reply." else null
-                    actuallyOpenMic(socket, briefing)
-                }
-            }
-            return true
+            Thread {
+                val items = fetchPendingItems(consume = false)
+                mainHandler.post { speakPendingThenOpen(socket, items) }
+            }.start()
         }
-        return actuallyOpenMic(socket, null)
+        actuallyOpenMic(socket, null)
+    }
+
+    private fun speakPendingThenOpen(socket: WebSocket, items: List<String>) {
+        if (!captureRequested || mic.isOpen) return
+        if (items.isEmpty()) { actuallyOpenMic(socket, null); return }
+
+        val prefix = "While you were away, " +
+                (if (items.size == 1) "one update." else "${items.size} updates.")
+        val body = items.joinToString(" … ") { it.take(180) }
+        // speak → consume (they've been heard) → open mic → cue
+        announcer.speakReply("$prefix $body") {
+            mainHandler.post {
+                Thread { consumePending() }.start()
+                actuallyOpenMic(socket, null)
+            }
+        }
     }
 
     private fun actuallyOpenMic(socket: WebSocket, preSpeech: String?): Boolean {
@@ -227,34 +241,39 @@ class AudioCaptureService : Service() {
             updateNotification("meta agent — state your command")
         } else {
             playCue(ToneGenerator.TONE_PROP_BEEP, 120)   // "go ahead"
-            if (preSpeech != null) announcer.say(preSpeech)  // spoken INTO open mic;
-            // server VAD may hear it — acceptable v0 trade-off, noted in docs
             updateNotification()
         }
         return true
     }
 
-    /** GET pending-count for the active lane from telepathyd. Background thread. */
-    private fun fetchPendingCount(done: (Int) -> Unit) {
-        val hermes = getSharedPreferences("cfg", MODE_PRIVATE)
-            .getString("hermes", null)
-        if (hermes.isNullOrBlank()) { done(0); return }   // no hermes -> no pending concept
-        Thread {
-            var count = 0
-            try {
-                val client = OkHttpClient()
-                val res = client.newCall(
-                    Request.Builder().url("$hermes/api/pending").build()).execute()
-                res.use { r ->
-                    val body = r.body?.string() ?: ""
-                    val msg = org.json.JSONObject(body)
-                    count = msg.optInt("count", 0)
+    /** Fetch pending items for the active lane (oldest first). */
+    private fun fetchPendingItems(consume: Boolean): List<String> {
+        val hermes = getSharedPreferences("cfg", MODE_PRIVATE).getString("hermes", null)
+            ?: return emptyList()
+        return try {
+            val url = "$hermes/api/pending" + if (consume) "?consume=true" else ""
+            val res = OkHttpClient().newCall(Request.Builder().url(url).build()).execute()
+            res.use { r ->
+                val arr = org.json.JSONObject(r.body?.string() ?: "{}")
+                    .optJSONArray("items") ?: return emptyList()
+                (0 until arr.length()).mapNotNull { i ->
+                    arr.optJSONObject(i)?.optString("content")?.takeIf { it.isNotBlank() }
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "pending fetch: ${e.message}")
             }
-            done(count)   // called from this thread; caller hops to main
-        }.start()
+        } catch (e: Exception) {
+            Log.w(TAG, "pending fetch: ${e.message}")
+            emptyList()
+        }
+    }
+
+    /** Acknowledge that a lane's pending items have been spoken. */
+    private fun consumePending() {
+        val hermes = getSharedPreferences("cfg", MODE_PRIVATE).getString("hermes", null) ?: return
+        try {
+            val body = "{}".toRequestBody("application/json".toMediaTypeOrNull())
+            val request = Request.Builder().url("$hermes/api/pending/consume").post(body).build()
+            OkHttpClient().newCall(request).execute().close()
+        } catch (_: Exception) {}
     }
 
     override fun onDestroy() {

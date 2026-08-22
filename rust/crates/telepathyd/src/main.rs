@@ -137,6 +137,21 @@ async fn get_state(State(state): State<Arc<AppState>>) -> Json<serde_json::Value
     reg.touch(&active_id);
     let active = reg.active().name.clone();
     let mut body = serde_json::to_value(&*reg).unwrap();
+
+    // enrich lanes with session titles from the Hermes store, when available
+    if let Ok(db) = std::env::var("TELEPATHY_HERMES_STATE_DB") {
+        let titles = hermes_search::latest_titles(&db);
+        if let Some(lanes) = body["lanes"].as_array_mut() {
+            for lane in lanes.iter_mut() {
+                if let Some(id) = lane["id"].as_str() {
+                    if let Some((_, title)) = titles.iter().find(|(cid, _)| cid == id) {
+                        lane["title"] = serde_json::json!(title);
+                    }
+                }
+            }
+        }
+    }
+
     body["active"] = serde_json::json!(active);
     Json(body)
 }

@@ -85,7 +85,13 @@ export async function respondViaHermes(text: string): Promise<string | null> {
   try {
     return await deliverAndWait(cfg, () => ({ id: currentLaneId() }), text);
   } catch (e) {
-    return `Hermes error: ${(e as Error).message}`;
+    const msg = (e as Error).message;
+    // timeout ≠ failure: Hermes keeps working; the reply lands in the lane's
+    // durable queue and gets announced at your next pinch
+    if (msg.includes("no reply")) {
+      return "Nothing yet. I'll read it to you when it lands.";
+    }
+    return `Hermes error: ${msg}`;
   }
 }
 
