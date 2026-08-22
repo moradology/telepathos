@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use telepathy_lanes::LaneRegistry;
 
+mod hermes_search;
 mod relay;
 
 use relay::RelayState;
@@ -31,6 +32,9 @@ async fn main() -> anyhow::Result<()> {
         .filter(|s| !s.is_empty())
         .collect();
 
+    let pending_path = std::env::var("TELEPATHY_PENDING").unwrap_or_else(|_| "pending.json".into());
+    relay.set_persist_path(&PathBuf::from(&pending_path));
+
     let state = Arc::new(AppState {
         reg: Mutex::new(LaneRegistry::load(&PathBuf::from(&lanes_path))),
         path: PathBuf::from(lanes_path),
@@ -38,10 +42,18 @@ async fn main() -> anyhow::Result<()> {
         msg_seq: std::sync::atomic::AtomicU64::new(0),
     });
 
+    // search backend: read-only FTS over the Hermes session store
+    if let Ok(db) = std::env::var("TELEPATHY_HERMES_STATE_DB") {
+        telepathy_steering::set_search_backend(move |query| {
+            hermes_search::search_sessions(&db, query, &[])
+        });
+    }
+
     let relay_router = relay::router(relay.clone(), secrets);
 
     let app = Router::new()
         .route("/api/state", get(get_state))
+        .route("/api/pending", get(get_pending))
         .route("/api/message", post(post_message))
         .route("/api/delivery", get(get_delivery))
         .nest_service("/relay", relay_router)
@@ -63,6 +75,16 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+/// Pending (undelivered) items for the ACTIVE lane — phone checks on mic-open.
+async fn get_pending(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    let reg = state.reg.lock().await;
+    let lane = reg.active();
+    Json(serde_json::json!({
+        "lane_id": lane.id,
+        "count": state.relay.pending_count(&lane.id),
+    }))
 }
 
 /// Phone bridge → lane: wrap as MessageEvent and push to the gateway.

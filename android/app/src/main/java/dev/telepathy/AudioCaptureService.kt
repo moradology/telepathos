@@ -194,22 +194,67 @@ class AudioCaptureService : Service() {
     private fun openMicNow(): Boolean {
         val socket = ws ?: return false
         if (!captureRequested || mic.isOpen) return false
-        return if (mic.open { chunk -> socket.send(chunk.toByteString()) }) {
-            if (pendingMeta) {
-                pendingMeta = false
-                socket.send("""{"type":"meta_mode"}""")
-                playCue(ToneGenerator.TONE_PROP_BEEP2, 90)
-                mainHandler.postDelayed({ playCue(ToneGenerator.TONE_PROP_BEEP2, 90) }, 180)
-                updateNotification("meta agent — state your command")
-            } else {
-                playCue(ToneGenerator.TONE_PROP_BEEP, 120)   // "go ahead"
-                updateNotification()
+        // Before opening the floor: check for undelivered lane updates (cron results,
+        // async agent replies). Speak them first, THEN cue and open — so the user's
+        // first word is never stepped on by our own speech.
+        if (!pendingMeta) {
+            fetchPendingCount { count ->
+                mainHandler.post {
+                    val briefing = if (count > 0) "While you were away: $count update" +
+                            (if (count > 1) "s" else "") + ". I'll read them after your next reply." else null
+                    actuallyOpenMic(socket, briefing)
+                }
             }
-            true
-        } else {
-            announcer.say("Microphone unavailable.")
-            false
+            return true
         }
+        return actuallyOpenMic(socket, null)
+    }
+
+    private fun actuallyOpenMic(socket: WebSocket, preSpeech: String?): Boolean {
+        if (!captureRequested || mic.isOpen) return false
+        // open mic first (user may start talking immediately after the cue),
+        // then speak any pre-speech note through the same earbuds
+        val opened = mic.open { chunk -> socket.send(chunk.toByteString()) }
+        if (!opened) {
+            announcer.say("Microphone unavailable.")
+            return false
+        }
+        if (pendingMeta) {
+            pendingMeta = false
+            socket.send("""{"type":"meta_mode"}""")
+            playCue(ToneGenerator.TONE_PROP_BEEP2, 90)
+            mainHandler.postDelayed({ playCue(ToneGenerator.TONE_PROP_BEEP2, 90) }, 180)
+            updateNotification("meta agent — state your command")
+        } else {
+            playCue(ToneGenerator.TONE_PROP_BEEP, 120)   // "go ahead"
+            if (preSpeech != null) announcer.say(preSpeech)  // spoken INTO open mic;
+            // server VAD may hear it — acceptable v0 trade-off, noted in docs
+            updateNotification()
+        }
+        return true
+    }
+
+    /** GET pending-count for the active lane from telepathyd. Background thread. */
+    private fun fetchPendingCount(done: (Int) -> Unit) {
+        val hermes = getSharedPreferences("cfg", MODE_PRIVATE)
+            .getString("hermes", null)
+        if (hermes.isNullOrBlank()) { done(0); return }   // no hermes -> no pending concept
+        Thread {
+            var count = 0
+            try {
+                val client = OkHttpClient()
+                val res = client.newCall(
+                    Request.Builder().url("$hermes/api/pending").build()).execute()
+                res.use { r ->
+                    val body = r.body?.string() ?: ""
+                    val msg = org.json.JSONObject(body)
+                    count = msg.optInt("count", 0)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "pending fetch: ${e.message}")
+            }
+            done(count)   // called from this thread; caller hops to main
+        }.start()
     }
 
     override fun onDestroy() {

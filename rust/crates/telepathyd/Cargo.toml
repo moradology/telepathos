@@ -17,5 +17,7 @@ hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
 base64 = "0.22"
+rusqlite = { version = "0.32", features = ["bundled"] }
+
 [dev-dependencies]
 tokio = { workspace = true }

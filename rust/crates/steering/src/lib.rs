@@ -14,6 +14,18 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use telepathy_lanes::{match_lane, LaneRegistry};
 
+// ---- optional search backend (registered by the daemon) ----
+// The steering crate never touches SQLite itself; the daemon registers a
+// lookup closure at boot. Unregistered => spoken fallback.
+use std::sync::OnceLock;
+static SEARCH_BACKEND: OnceLock<Box<dyn Fn(&str) -> String + Send + Sync>> = OnceLock::new();
+pub fn set_search_backend(f: impl Fn(&str) -> String + Send + Sync + 'static) {
+    let _ = SEARCH_BACKEND.set(Box::new(f));
+}
+fn search_backend() -> Option<&'static (dyn Fn(&str) -> String + Send + Sync)> {
+    SEARCH_BACKEND.get().map(|f| f.as_ref())
+}
+
 // ---- the tool set as a closed type ----
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,6 +35,7 @@ pub enum SteeringTool {
     SwitchLane,
     CreateLane,
     LaneStats,
+    SearchConversations,
 }
 
 impl SteeringTool {
@@ -33,6 +46,7 @@ impl SteeringTool {
         Self::SwitchLane,
         Self::CreateLane,
         Self::LaneStats,
+        Self::SearchConversations,
     ];
 
     pub fn from_name(name: &str) -> Option<Self> {
@@ -46,6 +60,7 @@ impl SteeringTool {
             Self::SwitchLane => "switch_lane",
             Self::CreateLane => "create_lane",
             Self::LaneStats => "lane_stats",
+            Self::SearchConversations => "search_conversations",
         }
     }
 
@@ -58,6 +73,7 @@ impl SteeringTool {
             Self::SwitchLane => "Make a lane the active conversation. Fuzzy-matches the name.",
             Self::CreateLane => "Create a new conversation lane and switch to it.",
             Self::LaneStats => "Interaction counts and last-active times for all lanes.",
+            Self::SearchConversations => "Search past conversations for a topic. Returns which lanes mention it, not the content.",
         }
     }
 
@@ -70,6 +86,11 @@ impl SteeringTool {
                 "type": "object",
                 "properties": {"name": {"type": "string"}},
                 "required": ["name"]
+            }),
+            Self::SearchConversations => json!({
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"]
             }),
         }
     }
@@ -145,6 +166,19 @@ pub fn execute_tool(reg: &mut LaneRegistry, tool: SteeringTool, args: &Value) ->
             }
             Err(_) => "Argument 'name' is required.".into(),
         },
+        SteeringTool::SearchConversations => {
+            let parsed = serde_json::from_value::<serde_json::Value>(args.clone());
+            match parsed {
+                Ok(a) => {
+                    let q = a["query"].as_str().unwrap_or("");
+                    match (search_backend(), q.is_empty()) {
+                        (Some(f), false) => f(q),
+                        _ => "Search is not available right now.".into(),
+                    }
+                }
+                Err(_) => "Argument 'query' is required.".into(),
+            }
+        }
         SteeringTool::LaneStats => reg
             .lanes
             .iter()

@@ -14,7 +14,7 @@ fn tools_stay_constrained() {
     let names: Vec<&str> = telepathy_steering::tools().iter().map(|t| t.name).collect();
     assert_eq!(
         names,
-        vec!["list_lanes", "active_lane", "switch_lane", "create_lane", "lane_stats"]
+        vec!["list_lanes", "active_lane", "switch_lane", "create_lane", "lane_stats", "search_conversations"]
     );
 }
 

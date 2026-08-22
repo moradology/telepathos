@@ -19,13 +19,15 @@ use axum::{
 };
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+use std::fs;
+use std::path::PathBuf;
 
 type HmacSha256 = Hmac<Sha256>;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 
 /// A reply the gateway sent for a lane, awaiting pickup by the phone bridge.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Delivery {
     pub seq: u64,
     pub chat_id: String,
@@ -37,6 +39,8 @@ pub struct Delivery {
 /// without limit.
 const RELAY_CHANNEL_CAP: usize = 64;
 
+/// Durable pending-delivery queue: cron results and lane replies survive
+/// daemon restarts until the phone consumes them.
 #[derive(Default)]
 pub struct RelayState {
     /// Live socket push channel (set while a gateway is connected).
@@ -44,6 +48,29 @@ pub struct RelayState {
     /// Deliveries from the gateway awaiting phone pickup.
     pub deliveries: Arc<Mutex<Vec<Delivery>>>,
     pub next_seq: Arc<Mutex<u64>>,
+    pub persist_path: Arc<Mutex<Option<PathBuf>>>,
+}
+
+impl RelayState {
+    pub fn set_persist_path(&self, p: &PathBuf) {
+        *self.persist_path.lock().unwrap() = Some(p.clone());
+        // reload any previously-pending entries
+        if let Ok(json) = fs::read_to_string(p) {
+            if let Ok(list) = serde_json::from_str::<Vec<Delivery>>(&json) {
+                let mut q = self.deliveries.lock().unwrap();
+                let max_seq = q.iter().map(|d| d.seq).max().unwrap_or(0);
+                q.extend(list.into_iter().filter(|d| d.seq > max_seq));
+            }
+        }
+    }
+
+    fn persist(&self) {
+        if let Some(p) = self.persist_path.lock().unwrap().as_ref() {
+            if let Ok(json) = serde_json::to_string_pretty(&*self.deliveries.lock().unwrap()) {
+                let _ = fs::write(p, json);
+            }
+        }
+    }
 }
 
 impl RelayState {
@@ -65,17 +92,31 @@ impl RelayState {
             let excess = q.len() - 200;
             q.drain(0..excess);
         }
+        drop(q);
+        self.persist(); // durability: cron results survive restarts
         n
     }
 
     /// Deliveries after the caller's cursor. With `consume`, returned entries
     /// are removed — the caller has taken responsibility for speaking them.
+    pub fn pending_count(&self, lane_id: &str) -> usize {
+        self.deliveries
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|d| d.chat_id == lane_id)
+            .count()
+    }
+
     pub fn deliveries_after(&self, after: u64, consume: bool) -> (Vec<Delivery>, u64) {
         let mut q = self.deliveries.lock().unwrap();
         let picked: Vec<Delivery> = q.iter().filter(|d| d.seq > after).cloned().collect();
         let latest = q.last().map(|d| d.seq).unwrap_or(after);
         if consume && !picked.is_empty() {
             q.retain(|d| d.seq <= after);
+            drop(q);
+            self.persist();
+            return (picked, latest);
         }
         (picked, latest)
     }
