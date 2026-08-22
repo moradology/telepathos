@@ -32,10 +32,15 @@ pub struct Delivery {
     pub content: String,
 }
 
+/// Channel capacity: utterances arrive at human speaking rate; if the gateway
+/// falls 64 behind, we apply backpressure to the phone instead of buffering
+/// without limit.
+const RELAY_CHANNEL_CAP: usize = 64;
+
 #[derive(Default)]
 pub struct RelayState {
     /// Live socket push channel (set while a gateway is connected).
-    pub outbound: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedSender<String>>>>,
+    pub outbound: Arc<Mutex<Option<tokio::sync::mpsc::Sender<String>>>>,
     /// Deliveries from the gateway awaiting phone pickup.
     pub deliveries: Arc<Mutex<Vec<Delivery>>>,
     pub next_seq: Arc<Mutex<u64>>,
@@ -63,25 +68,29 @@ impl RelayState {
         n
     }
 
-    pub fn deliveries_after(&self, after: u64) -> Vec<Delivery> {
-        self.deliveries
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|d| d.seq > after)
-            .cloned()
-            .collect()
+    /// Deliveries after the caller's cursor. With `consume`, returned entries
+    /// are removed — the caller has taken responsibility for speaking them.
+    pub fn deliveries_after(&self, after: u64, consume: bool) -> (Vec<Delivery>, u64) {
+        let mut q = self.deliveries.lock().unwrap();
+        let picked: Vec<Delivery> = q.iter().filter(|d| d.seq > after).cloned().collect();
+        let latest = q.last().map(|d| d.seq).unwrap_or(after);
+        if consume && !picked.is_empty() {
+            q.retain(|d| d.seq <= after);
+        }
+        (picked, latest)
     }
 
-    /// Push an inbound user message to the connected gateway. Errors when the
-    /// gateway is not currently dialed in.
-    pub fn push_inbound(&self, event: &serde_json::Value) -> Result<()> {
+    /// Push an inbound user message to the connected gateway. Awaits channel
+    /// capacity: a slow gateway slows the phone down rather than growing memory
+    /// without bound. Errors when no gateway is dialed in.
+    pub async fn push_inbound(&self, event: &serde_json::Value) -> Result<()> {
         let frame = json!({ "type": "inbound", "event": event });
         let tx = {
             let guard = self.outbound.lock().unwrap();
             guard.as_ref().cloned().ok_or_else(|| anyhow::anyhow!("no gateway connected"))?
         };
         tx.send(serde_json::to_string(&frame)?)
+            .await
             .map_err(|e| anyhow::anyhow!("gateway socket closed: {e}"))
     }
 }
@@ -195,7 +204,7 @@ pub fn router(state: Arc<RelayState>, secrets: Vec<String>) -> Router {
 }
 
 async fn relay_socket(mut socket: WebSocket, state: Arc<RelayState>) {
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let (tx, mut rx) = tokio::sync::mpsc::channel(RELAY_CHANNEL_CAP);
     *state.outbound.lock().unwrap() = Some(tx);
 
     // one loop, both directions: our inbound pushes + the gateway's actions

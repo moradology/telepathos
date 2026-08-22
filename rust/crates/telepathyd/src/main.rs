@@ -2,7 +2,7 @@
 //! v0: lane HTTP API (same endpoints as the Node bridge's api.ts).
 //! Next: WS endpoint speaking the telepathy protocol, then the Hermes relay.
 
-use axum::{extract::State, routing::{get, post}, Json, Router};
+use axum::{response::{IntoResponse, Response}, extract::State, http::StatusCode, routing::{get, post}, Json, Router};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -63,24 +63,28 @@ async fn main() -> anyhow::Result<()> {
 }
 
 /// Phone bridge → lane: wrap as MessageEvent and push to the gateway.
+/// 400 missing text · 404 unknown lane · 503 no gateway dialed in.
 async fn post_message(
     State(state): State<Arc<AppState>>,
     Json(body): Json<serde_json::Value>,
-) -> Json<serde_json::Value> {
+) -> Response {
     let lane_id = body["lane_id"].as_str().unwrap_or("telepathy:direct").to_string();
     let text = body["text"].as_str().unwrap_or_default().to_string();
     if text.is_empty() {
-        return Json(serde_json::json!({"error": "text required"}));
+        return (StatusCode::BAD_REQUEST, "text required").into_response();
     }
     let lane_name = {
         let reg = state.reg.lock().await;
-        reg.lanes.iter().find(|l| l.id == lane_id).map(|l| l.name.clone()).unwrap_or_else(|| lane_id.clone())
+        match reg.lanes.iter().find(|l| l.id == lane_id) {
+            Some(l) => l.name.clone(),
+            None => return (StatusCode::NOT_FOUND, format!("unknown lane {lane_id}")).into_response(),
+        }
     };
     let seq = state.msg_seq.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let event = relay::message_event(&lane_id, &lane_name, &text, seq);
-    match state.relay.push_inbound(&event) {
-        Ok(()) => Json(serde_json::json!({"ok": true, "queued": false})),
-        Err(e) => Json(serde_json::json!({"ok": false, "error": e.to_string()})),
+    match state.relay.push_inbound(&event).await {
+        Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
+        Err(e) => (StatusCode::SERVICE_UNAVAILABLE, e.to_string()).into_response(),
     }
 }
 
@@ -89,14 +93,17 @@ async fn post_message(
 struct DeliveryQuery {
     #[serde(default)]
     after: u64,
+    /// true → remove returned entries (phone has taken responsibility)
+    #[serde(default)]
+    consume: bool,
 }
 
 async fn get_delivery(
     State(state): State<Arc<AppState>>,
     axum::extract::Query(q): axum::extract::Query<DeliveryQuery>,
 ) -> Json<serde_json::Value> {
-    let items = state.relay.deliveries_after(q.after);
-    Json(serde_json::json!({ "deliveries": items }))
+    let (items, latest) = state.relay.deliveries_after(q.after, q.consume);
+    Json(serde_json::json!({ "deliveries": items, "latest": latest }))
 }
 
 async fn get_state(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {

@@ -7,6 +7,7 @@ import { InteractionState, InteractionEvent, transition, micOpen } from "./fsm.j
 import { loadLanes, saveLanes, activeLane, switchLane, createLane, LaneRegistry } from "./lanes.js";
 import { parseMeta, MetaAction } from "./meta.js";
 import { runMetaAgent } from "./meta-agent.js";
+import { respondViaHermes, setCurrentLaneIdFn } from "./hermes.js";
 import { startApiServer } from "./api.js";
 
 /**
@@ -38,6 +39,7 @@ interface ClientState {
 
 const lanes: LaneRegistry = loadLanes();
 startApiServer(lanes, config.apiPort, config.apiHost);
+setCurrentLaneIdFn(() => lanes.activeId);
 
 const wss = new WebSocketServer({ port: config.port, host: "0.0.0.0", maxPayload: 1 << 20 });
 
@@ -331,7 +333,10 @@ function executeMeta(action: MetaAction): string {
  * Placeholder brain. Replace with the Hermes relay call; the lane's chat_id
  * (activeLane(lanes).id) is what stamps the relay MessageEvent.
  */
-async function respond(text: string, _state: ClientState): Promise<string> {
+async function respond(text: string, state: ClientState): Promise<string> {
+  // Hermes plane when configured; echo stub otherwise.
+  const hermesReply = await respondViaHermes(text);
+  if (hermesReply !== null) return hermesReply;
   return `Heard you say: ${text}`;
 }
 
