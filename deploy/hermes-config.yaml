@@ -4,24 +4,12 @@
 gateway:
   relay_url: "http://host.docker.internal:8790"
 
-# Spoken-output policy: the agent's tools may consume ANY modality (browser,
-# vision, ...) — the model summarizes results into speech. The one genuine gate:
-# tools whose ARTIFACT is non-speakable with no verbal summary value.
-# Allowlist style — anything not listed never loads on this platform.
-platform_toolsets:
-  relay:
-    - files          # read code/config context
-    - terminal       # run commands (the point)
-    - memory         # remember preferences across lanes
-    - delegation     # spawn subagents for parallel work
-    - cron           # schedule jobs that brief you later
-    - web            # search + extract, summarized aloud
-    - browser        # "why is the CI page red?" — agent reads, you hear why
-    - vision         # "what's wrong with this screenshot?" — same pattern
+# No toolset gates: tools may produce any artifact (images included — they can
+# be sent along as links/attachments). The constraint is on RESPONSE
+# COMPOSITION, enforced by the platform hint in telepathyd's descriptor:
+# every reply must carry its own spoken summary; an artifact is never the
+# whole reply.
 
-agent:
-  disabled_toolsets: []   # e.g. add an image-gen toolset here if one exists:
-                          # its artifact is visual-only, nothing to speak
 
 platforms:
   relay:

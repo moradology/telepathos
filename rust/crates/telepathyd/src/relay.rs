@@ -182,7 +182,8 @@ pub fn capability_descriptor() -> serde_json::Value {
         "emoji": "🧠",
         "platform_hint": "User talks through open-ear earbuds. Replies are converted to \
 speech on their phone. Prefer short conversational answers; never emit code blocks, \
-tables, or long lists.",
+tables, or long lists. If a result includes a visual artifact (image, file, page), \
+deliver it as a link AND summarize it aloud — an artifact alone is never a complete reply.",
         "supported_ops": ["send", "typing"],
     })
 }
