@@ -1,0 +1,19 @@
+# Hermes gateway for the telepathy relay test.
+# Builds from the upstream repo; first build downloads a few hundred MB.
+FROM python:3.11-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git curl ripgrep ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 https://github.com/NousResearch/hermes-agent /opt/hermes
+WORKDIR /opt/hermes
+
+# Hermes requires an editable/synced install (its build guard rejects plain
+# `pip install .`); uv sync creates the project venv it expects.
+RUN pip install --no-cache-dir uv && uv sync
+
+COPY hermes-config.yaml /root/.hermes/config.yaml
+
+# GATEWAY_RELAY_URL / OPENAI_API_KEY come in via compose environment.
+CMD ["/opt/hermes/.venv/bin/hermes", "gateway"]

@@ -1,0 +1,10 @@
+# Minimal gateway config for the relay Docker test.
+# Provider/model choice happens via env or `hermes model` normally;
+# this file exists so the gateway boots headless.
+gateway:
+  relay_url: "http://host.docker.internal:8790"
+
+platforms:
+  relay:
+    extra:
+      relay_url: "http://host.docker.internal:8790"

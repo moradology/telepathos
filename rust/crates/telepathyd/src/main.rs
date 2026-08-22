@@ -55,7 +55,10 @@ async fn main() -> anyhow::Result<()> {
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(8790);
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let bind = std::env::var("TELEPATHY_BIND").unwrap_or_else(|_| "127.0.0.1".into());
+    let addr: SocketAddr = format!("{bind}:{port}")
+        .parse()
+        .unwrap_or(SocketAddr::from(([127, 0, 0, 1], port)));
     println!("telepathyd lane API on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;

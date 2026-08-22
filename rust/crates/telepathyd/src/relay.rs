@@ -130,7 +130,7 @@ pub fn verify_relay_token(token_b64: &str, secrets: &[String]) -> Result<String>
 pub fn capability_descriptor() -> serde_json::Value {
     json!({
         "contract_version": 1,
-        "platform": "telepathy",
+        "platform": "relay",
         "label": "Telepathy voice",
         "max_message_length": 0,          // 0 → gateway default 4096
         "supports_draft_streaming": false,
@@ -156,7 +156,7 @@ pub fn message_event(lane_id: &str, lane_name: &str, text: &str, msg_seq: u64) -
             "user_id": "telepathy-user",
             "user_name": null,
             "source": {
-                "platform": "telepathy",
+                "platform": "relay",
                 "chat_id": lane_id,
                 "chat_type": "dm",
                 "chat_name": lane_name,
@@ -185,15 +185,19 @@ pub fn router(state: Arc<RelayState>, secrets: Vec<String>) -> Router {
                         .get("authorization")
                         .and_then(|v| v.to_str().ok())
                         .and_then(|v| v.strip_prefix("Bearer "));
-                    let gateway_id = match bearer
-                        .map(|t| verify_relay_token(t, &secrets))
-                        .transpose()
-                    {
-                        Ok(Some(id)) => id,
-                        _ => {
-                            return Ok::<_, StatusCode>(
+                    // No secrets configured -> dev/test mode: accept unauthenticated
+                    // dials (mirrors ws_transport: absent creds = plain upgrade).
+                    let gateway_id = if secrets.is_empty() {
+                        "unauthenticated".to_string()
+                    } else {
+                        match bearer
+                            .map(|t| verify_relay_token(t, &secrets))
+                            .transpose()
+                        {
+                            Ok(Some(id)) => id,
+                            _ => return Ok::<_, StatusCode>(
                                 (StatusCode::UNAUTHORIZED, "relay auth failed").into_response(),
-                            )
+                            ),
                         }
                     };
                     println!("relay: gateway '{gateway_id}' dialed in");
@@ -212,7 +216,9 @@ async fn relay_socket(mut socket: WebSocket, state: Arc<RelayState>) {
         tokio::select! {
             maybe_frame = rx.recv() => match maybe_frame {
                 Some(frame) => {
-                    if socket.send(WsMessage::Text(frame)).await.is_err() { break; }
+                    // contract frames are newline-delimited JSON; the gateway's
+                    // read loop only processes complete lines
+                    if socket.send(WsMessage::Text(format!("{frame}\n"))).await.is_err() { break; }
                 }
                 None => break,
             },
@@ -228,36 +234,78 @@ async fn relay_socket(mut socket: WebSocket, state: Arc<RelayState>) {
     println!("relay: gateway disconnected");
 }
 
-fn handle_gateway_frame(state: &RelayState, raw: &str) {
+fn handle_gateway_frame(state: &Arc<RelayState>, raw: &str) {
     let v: serde_json::Value = match serde_json::from_str(raw) {
         Ok(v) => v,
         Err(_) => {
-            println!("relay: non-JSON frame: {raw}");
+            println!("relay: non-JSON frame: {}", truncate(raw));
             return;
         }
     };
-    match v["type"].as_str() {
-        // §4 send: the reply path. chat_id selects the lane.
-        Some("action") | Some("send") => {
-            let op = v["op"].as_str().or(v["action"]["op"].as_str());
-            match op {
-                Some("send") => {
-                    let chat_id = v["chat_id"]
-                        .as_str()
-                        .or(v["action"]["chat_id"].as_str())
-                        .unwrap_or("unknown");
-                    let content = v["content"]
-                        .as_str()
-                        .or(v["action"]["content"].as_str())
-                        .unwrap_or("");
+
+    // The socket sender lives behind the same mutex the push path uses.
+    enum Reply {
+        Frame(String),
+    }
+    fn reply_descriptor() -> Reply {
+        Reply::Frame(serde_json::to_string(&json!({
+            "type": "descriptor",
+            "descriptor": capability_descriptor(),
+        })).unwrap())
+    }
+    fn reply_result(request_id: &str, result: serde_json::Value) -> Reply {
+        Reply::Frame(serde_json::to_string(&json!({
+            "type": "outbound_result", "requestId": request_id, "result": result,
+        })).unwrap())
+    }
+
+    let reply = match v["type"].as_str() {
+        // handshake: gateway introduces itself (possibly several identities),
+        // we answer with the capability descriptor it will front.
+        Some("hello") => {
+            println!(
+                "relay: hello platform={} botId={}",
+                v["platform"], v["botId"]
+            );
+            Some(reply_descriptor())
+        }
+
+        // §4 actions, each answered by requestId
+        Some("outbound") => {
+            let request_id = v["requestId"].as_str().unwrap_or_default().to_string();
+            let action = &v["action"];
+            let op = action["op"].as_str().unwrap_or_default().to_string();
+            let result = match op.as_str() {
+                "send" => {
+                    let chat_id = action["chat_id"].as_str().unwrap_or("unknown");
+                    let content = action["content"].as_str().unwrap_or("");
                     let seq = state.queue_delivery(chat_id, content);
                     println!("relay: send → lane {chat_id} (seq {seq}): {}", truncate(content));
+                    json!({ "success": true })
                 }
-                Some(other) => println!("relay: unhandled op '{other}' — logged, ignored"),
-                None => println!("relay: action frame without op: {raw}"),
+                "typing" => json!({ "success": true }),
+                other => {
+                    println!("relay: op '{other}' not implemented — degraded success:false");
+                    json!({ "success": false, "error": format!("op {other} not implemented") })
+                }
+            };
+            Some(reply_result(&request_id, result))
+        }
+
+        other => {
+            println!("relay: unknown frame type {other:?}: {}", truncate(raw));
+            None
+        }
+    };
+
+    if let Some(Reply::Frame(frame)) = reply {
+        if let Some(tx) = state.outbound.lock().unwrap().as_ref() {
+            // try_send: sync context, tiny control frames, 64-slot buffer.
+            // (An awaited send here would be a dropped future — silent loss.)
+            if let Err(e) = tx.try_send(frame) {
+                println!("relay: failed to queue reply: {e}");
             }
         }
-        other => println!("relay: unknown frame type {other:?}: {}", truncate(raw)),
     }
 }
 
@@ -322,7 +370,7 @@ mod tests {
     fn descriptor_matches_contract_fields() {
         let d = capability_descriptor();
         assert_eq!(d["contract_version"], 1);
-        assert_eq!(d["platform"], "telepathy");
+        assert_eq!(d["platform"], "relay");
         assert_eq!(d["markdown_dialect"], "plain");
         assert_eq!(d["supports_edit"], false);
     }
@@ -332,7 +380,7 @@ mod tests {
         let ev = message_event("telepathy:direct", "direct", "hello", 7);
         assert_eq!(ev["type"], "inbound");
         assert_eq!(ev["event"]["text"], "hello");
-        assert_eq!(ev["event"]["source"]["platform"], "telepathy");
+        assert_eq!(ev["event"]["source"]["platform"], "relay");
         assert_eq!(ev["event"]["source"]["chat_id"], "telepathy:direct");
         assert_eq!(ev["event"]["source"]["chat_type"], "dm");
         assert_eq!(ev["event"]["message_id"], "tp-7");
