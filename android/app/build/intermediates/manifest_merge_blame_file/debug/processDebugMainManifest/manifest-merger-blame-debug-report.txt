@@ -40,7 +40,7 @@
 23-->[androidx.core:core:1.15.0] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/b32c94ff66a5c01f1df11e3d5ca24784/transformed/core-1.15.0/AndroidManifest.xml:26:22-94
 24
 25    <application
-25-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:12:5-56:19
+25-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:12:5-66:19
 26        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
 26-->[androidx.core:core:1.15.0] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/b32c94ff66a5c01f1df11e3d5ca24784/transformed/core-1.15.0/AndroidManifest.xml:28:18-86
 27        android:debuggable="true"
@@ -107,81 +107,101 @@
 65            android:permission="android.permission.BIND_VOICE_INTERACTION" />
 65-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:48:13-75
 66
-67        <!-- Foreground mic capture + WebSocket client -->
-68        <service
-68-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:51:9-54:58
-69            android:name="dev.telepathy.AudioCaptureService"
-69-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:52:13-48
-70            android:exported="false"
-70-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:53:13-37
-71            android:foregroundServiceType="microphone" />
-71-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:54:13-55
-72
-73        <provider
-73-->[androidx.emoji2:emoji2:1.3.0] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/2184a54abc5520276dee0913b1b14112/transformed/emoji2-1.3.0/AndroidManifest.xml:24:9-32:20
-74            android:name="androidx.startup.InitializationProvider"
-74-->[androidx.emoji2:emoji2:1.3.0] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/2184a54abc5520276dee0913b1b14112/transformed/emoji2-1.3.0/AndroidManifest.xml:25:13-67
-75            android:authorities="dev.telepathy.androidx-startup"
-75-->[androidx.emoji2:emoji2:1.3.0] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/2184a54abc5520276dee0913b1b14112/transformed/emoji2-1.3.0/AndroidManifest.xml:26:13-68
-76            android:exported="false" >
-76-->[androidx.emoji2:emoji2:1.3.0] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/2184a54abc5520276dee0913b1b14112/transformed/emoji2-1.3.0/AndroidManifest.xml:27:13-37
-77            <meta-data
-77-->[androidx.emoji2:emoji2:1.3.0] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/2184a54abc5520276dee0913b1b14112/transformed/emoji2-1.3.0/AndroidManifest.xml:29:13-31:52
-78                android:name="androidx.emoji2.text.EmojiCompatInitializer"
-78-->[androidx.emoji2:emoji2:1.3.0] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/2184a54abc5520276dee0913b1b14112/transformed/emoji2-1.3.0/AndroidManifest.xml:30:17-75
-79                android:value="androidx.startup" />
-79-->[androidx.emoji2:emoji2:1.3.0] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/2184a54abc5520276dee0913b1b14112/transformed/emoji2-1.3.0/AndroidManifest.xml:31:17-49
-80            <meta-data
-80-->[androidx.lifecycle:lifecycle-process:2.6.2] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/a705591f291005602ba51b017fed5314/transformed/lifecycle-process-2.6.2/AndroidManifest.xml:29:13-31:52
-81                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
-81-->[androidx.lifecycle:lifecycle-process:2.6.2] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/a705591f291005602ba51b017fed5314/transformed/lifecycle-process-2.6.2/AndroidManifest.xml:30:17-78
-82                android:value="androidx.startup" />
-82-->[androidx.lifecycle:lifecycle-process:2.6.2] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/a705591f291005602ba51b017fed5314/transformed/lifecycle-process-2.6.2/AndroidManifest.xml:31:17-49
-83            <meta-data
-83-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:29:13-31:52
-84                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
-84-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:30:17-85
-85                android:value="androidx.startup" />
-85-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:31:17-49
-86        </provider>
-87
-88        <receiver
-88-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:34:9-52:20
-89            android:name="androidx.profileinstaller.ProfileInstallReceiver"
-89-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:35:13-76
-90            android:directBootAware="false"
-90-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:36:13-44
-91            android:enabled="true"
-91-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:37:13-35
-92            android:exported="true"
-92-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:38:13-36
-93            android:permission="android.permission.DUMP" >
-93-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:39:13-57
-94            <intent-filter>
-94-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:40:13-42:29
-95                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
-95-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:41:17-91
-95-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:41:25-88
-96            </intent-filter>
-97            <intent-filter>
-97-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:43:13-45:29
-98                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
-98-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:44:17-85
-98-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:44:25-82
-99            </intent-filter>
-100            <intent-filter>
-100-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:46:13-48:29
-101                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
-101-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:47:17-88
-101-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:47:25-85
-102            </intent-filter>
-103            <intent-filter>
-103-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:49:13-51:29
-104                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
-104-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:50:17-95
-104-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:50:25-92
-105            </intent-filter>
-106        </receiver>
-107    </application>
-108
-109</manifest>
+67        <receiver
+67-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:50:9-58:20
+68            android:name="dev.telepathy.RelayReceiver"
+68-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:51:13-42
+69            android:exported="false" >
+69-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:52:13-37
+70            <intent-filter>
+70-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:53:13-57:29
+71                <action android:name="dev.telepathy.SWITCH_LANE" />
+71-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:54:17-68
+71-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:54:25-65
+72                <action android:name="dev.telepathy.TALK" />
+72-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:55:17-61
+72-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:55:25-58
+73                <action android:name="dev.telepathy.STOP" />
+73-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:56:17-61
+73-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:56:25-58
+74            </intent-filter>
+75        </receiver>
+76
+77        <!-- Foreground mic capture + WebSocket client -->
+78        <service
+78-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:61:9-64:58
+79            android:name="dev.telepathy.AudioCaptureService"
+79-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:62:13-48
+80            android:exported="false"
+80-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:63:13-37
+81            android:foregroundServiceType="microphone" />
+81-->/Users/nzimmerman/git_repos/telepathy/android/app/src/main/AndroidManifest.xml:64:13-55
+82
+83        <provider
+83-->[androidx.emoji2:emoji2:1.3.0] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/2184a54abc5520276dee0913b1b14112/transformed/emoji2-1.3.0/AndroidManifest.xml:24:9-32:20
+84            android:name="androidx.startup.InitializationProvider"
+84-->[androidx.emoji2:emoji2:1.3.0] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/2184a54abc5520276dee0913b1b14112/transformed/emoji2-1.3.0/AndroidManifest.xml:25:13-67
+85            android:authorities="dev.telepathy.androidx-startup"
+85-->[androidx.emoji2:emoji2:1.3.0] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/2184a54abc5520276dee0913b1b14112/transformed/emoji2-1.3.0/AndroidManifest.xml:26:13-68
+86            android:exported="false" >
+86-->[androidx.emoji2:emoji2:1.3.0] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/2184a54abc5520276dee0913b1b14112/transformed/emoji2-1.3.0/AndroidManifest.xml:27:13-37
+87            <meta-data
+87-->[androidx.emoji2:emoji2:1.3.0] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/2184a54abc5520276dee0913b1b14112/transformed/emoji2-1.3.0/AndroidManifest.xml:29:13-31:52
+88                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+88-->[androidx.emoji2:emoji2:1.3.0] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/2184a54abc5520276dee0913b1b14112/transformed/emoji2-1.3.0/AndroidManifest.xml:30:17-75
+89                android:value="androidx.startup" />
+89-->[androidx.emoji2:emoji2:1.3.0] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/2184a54abc5520276dee0913b1b14112/transformed/emoji2-1.3.0/AndroidManifest.xml:31:17-49
+90            <meta-data
+90-->[androidx.lifecycle:lifecycle-process:2.6.2] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/a705591f291005602ba51b017fed5314/transformed/lifecycle-process-2.6.2/AndroidManifest.xml:29:13-31:52
+91                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+91-->[androidx.lifecycle:lifecycle-process:2.6.2] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/a705591f291005602ba51b017fed5314/transformed/lifecycle-process-2.6.2/AndroidManifest.xml:30:17-78
+92                android:value="androidx.startup" />
+92-->[androidx.lifecycle:lifecycle-process:2.6.2] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/a705591f291005602ba51b017fed5314/transformed/lifecycle-process-2.6.2/AndroidManifest.xml:31:17-49
+93            <meta-data
+93-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:29:13-31:52
+94                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+94-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:30:17-85
+95                android:value="androidx.startup" />
+95-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:31:17-49
+96        </provider>
+97
+98        <receiver
+98-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:34:9-52:20
+99            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+99-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:35:13-76
+100            android:directBootAware="false"
+100-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:36:13-44
+101            android:enabled="true"
+101-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:37:13-35
+102            android:exported="true"
+102-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:38:13-36
+103            android:permission="android.permission.DUMP" >
+103-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:39:13-57
+104            <intent-filter>
+104-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:40:13-42:29
+105                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+105-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:41:17-91
+105-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:41:25-88
+106            </intent-filter>
+107            <intent-filter>
+107-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:43:13-45:29
+108                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+108-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:44:17-85
+108-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:44:25-82
+109            </intent-filter>
+110            <intent-filter>
+110-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:46:13-48:29
+111                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+111-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:47:17-88
+111-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:47:25-85
+112            </intent-filter>
+113            <intent-filter>
+113-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:49:13-51:29
+114                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+114-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:50:17-95
+114-->[androidx.profileinstaller:profileinstaller:1.3.1] /Users/nzimmerman/.gradle/caches/8.10.2/transforms/9174e06c47378165ac8dd34e3a372975/transformed/profileinstaller-1.3.1/AndroidManifest.xml:50:25-92
+115            </intent-filter>
+116        </receiver>
+117    </application>
+118
+119</manifest>

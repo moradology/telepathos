@@ -64,6 +64,16 @@
             android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
 
+        <receiver
+            android:name="dev.telepathy.RelayReceiver"
+            android:exported="false" >
+            <intent-filter>
+                <action android:name="dev.telepathy.SWITCH_LANE" />
+                <action android:name="dev.telepathy.TALK" />
+                <action android:name="dev.telepathy.STOP" />
+            </intent-filter>
+        </receiver>
+
         <!-- Foreground mic capture + WebSocket client -->
         <service
             android:name="dev.telepathy.AudioCaptureService"

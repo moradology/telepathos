@@ -121,6 +121,7 @@ class AudioCaptureService : Service() {
             override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) { refreshBuds() }
         }, null)
         refreshBuds()
+        mainHandler.postDelayed(notifRefresh, 30_000)
 
         // Earbud taps arrive as AVRCP media keys (features.md M3).
         // Key→command mapping lives in ClientCommand.fromMediaKey (pure, testable).
@@ -290,9 +291,29 @@ class AudioCaptureService : Service() {
         super.onDestroy()
     }
 
-    /** Keep the persistent notification truthful (M4); wording comes from ConnectionState. */
+    /** Keep the persistent notification truthful (M4) and lane-aware. */
     private fun updateNotification(text: String? = null) {
-        Foreground.update(this, text ?: LinkState.current.summary)
+        if (text != null) { Foreground.update(this, text); return }
+        Thread {
+            val st = LaneStore.fetchState(this)
+            mainHandler.post {
+                val lane = st?.first?.find { it.active }
+                val pendingTotal = st?.first?.sumOf { it.pending } ?: 0
+                val line = buildString {
+                    append(LinkState.current.summary)
+                    if ((st?.first?.size ?: 0) > 0 && pendingTotal > 0) append(" · $pendingTotal pending")
+                }
+                Foreground.update(this, line, lane?.name ?: st?.second, pendingTotal)
+            }
+        }.start()
+    }
+
+    // light periodic refresh while the service lives: keeps lane/pending honest
+    private val notifRefresh = object : Runnable {
+        override fun run() {
+            if (wantConnection) updateNotification()
+            mainHandler.postDelayed(this, 30_000)
+        }
     }
 
     // ---- connection ----

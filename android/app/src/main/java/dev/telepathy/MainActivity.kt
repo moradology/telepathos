@@ -32,7 +32,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusView: TextView
     private lateinit var urlInput: EditText
     private lateinit var logView: TextView
+    private lateinit var lanesView: TextView
 
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val green = Color.parseColor("#2E7D32")
     private val red = Color.parseColor("#C62828")
     private val dim = Color.parseColor("#666666")
@@ -86,6 +88,16 @@ class MainActivity : AppCompatActivity() {
         col.addView(buttons)
 
         // gestures reference (one line each, no prose)
+        col.addView(label("─── lanes ─────────────────", 12f, dim))
+        lanesView = TextView(this).apply {
+            typeface = mono; textSize = 12f
+            setOnClickListener {
+                LaneStore.cycle(this@MainActivity)
+                mainHandler.postDelayed({ refreshLanes() }, 800)
+            }
+        }
+        col.addView(lanesView)
+
         col.addView(label("─── gestures ──────────────", 12f, dim))
         col.addView(label(
             "pinch      talk (wait for beep)\n" +
@@ -119,6 +131,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         refreshAll()
+        refreshLanes()
         LinkState.onChange { runOnUiThread { refreshAll() } }
         LinkState.onPhaseChange { runOnUiThread { refreshAll() } }
         TriggerLog.onChange { runOnUiThread { refreshLog() } }
@@ -126,7 +139,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        refreshAll() // user may have toggled assistant setting and come back
+        refreshAll()
+        refreshLanes() // user may have toggled settings and come back
     }
 
     private fun saveUrl() {
@@ -170,6 +184,28 @@ class MainActivity : AppCompatActivity() {
             startForegroundService(Intent(this, AudioCaptureService::class.java))
         }
         refreshAll()
+    }
+
+    /** Lane list from telepathyd; tap a lane row to switch to it. */
+    private fun refreshLanes() {
+        Thread {
+            val state = LaneStore.fetchState(this)
+            runOnUiThread {
+                if (state == null) {
+                    lanesView.setTextColor(dim)
+                    lanesView.text = "(server unreachable)"
+                    return@runOnUiThread
+                }
+                val (lanes, _) = state
+                lanesView.text = lanes.joinToString("\n") { l ->
+                    val mark = if (l.active) "▸" else " "
+                    val badge = if (l.pending > 0) "  📌${l.pending}" else ""
+                    val t = l.title?.let { " — $it" } ?: ""
+                    "$mark ${l.name}$t$badge"
+                }
+                lanesView.setTextColor(Color.BLACK)
+            }
+        }.start()
     }
 
     private fun refreshLog() {
