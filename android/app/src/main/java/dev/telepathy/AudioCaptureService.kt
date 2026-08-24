@@ -1103,8 +1103,12 @@ class AudioCaptureService : Service() {
                 val batch = runCatching { fetchPendingItems(pendingContext) }
                     .onFailure { Log.w(TAG, "meta lane worker: ${it.message}") }
                     .getOrDefault(PendingBatch.empty(pendingContext))
-                // Meta entry: speak the templated lane status (deterministic, no
-                // LLM) before cue+open — "which lane am I in" answered at entry.
+                // Meta entry: templated lane status + the timestamped inbox —
+                // "which lane am I in" and "what did I miss" answered at entry.
+                // Consumed after being heard (receipt-aware per-row ack).
+                val inbox = runCatching { fetchPendingInbox(pendingContext) }
+                    .onFailure { Log.w(TAG, "meta inbox worker: ${it.message}") }
+                    .getOrDefault(PendingInbox.empty())
                 val status = runCatching { fetchLaneStatus(pendingContext) }
                     .onFailure { Log.w(TAG, "meta status worker: ${it.message}") }
                     .getOrNull()
@@ -1114,18 +1118,28 @@ class AudioCaptureService : Service() {
                         preparation.finish(socket, generation)
                         return@post
                     }
-                    if (status != null) {
-                        announcer.speakReply(
-                            status,
-                            onDone = {
-                                mainHandler.post {
-                                    openAfterLaneValidation(socket, generation, batch, consumeBatch = false)
-                                }
-                            },
-                        )
-                    } else {
-                        openAfterLaneValidation(socket, generation, batch, consumeBatch = false)
+                    val spoken = buildString {
+                        append(status ?: "Meta.")
+                        if (inbox.items.isNotEmpty()) {
+                            append(" ")
+                            append(if (inbox.items.size == 1) "One update." else "${inbox.items.size} updates.")
+                            append(" ")
+                            append(inbox.items.joinToString(" … ") { it.spoken() })
+                        }
                     }
+                    announcer.speakReply(
+                        spoken,
+                        onDone = {
+                            mainHandler.post {
+                                Thread {
+                                    inbox.consume(pendingContext)
+                                    mainHandler.post {
+                                        openAfterLaneValidation(socket, generation, batch, consumeBatch = false)
+                                    }
+                                }.start()
+                            }
+                        },
+                    )
                 }
             }.start()
         }
@@ -2815,5 +2829,83 @@ class AudioCaptureService : Service() {
             "$PENDING_REPLY_ACKS_KEY_PREFIX$serverIdentity"
 
         const val EXTRA_META = "meta"
+    }
+}
+
+/** One pending inbox item with its arrival time, for the meta-entry readout. */
+internal data class PendingInboxItem(
+    val sequence: Long,
+    val content: String,
+    val arrivedAtSec: Long,
+) {
+    fun spoken(): String {
+        val age = (System.currentTimeMillis() / 1000) - arrivedAtSec
+        val rel = when {
+            age < 60 -> "just now"
+            age < 3600 -> "${age / 60} minutes ago"
+            age < 86400 -> "${age / 3600} hour" + (if (age / 3600 > 1) "s" else "") + " ago"
+            else -> "${age / 86400} day" + (if (age / 86400 > 1) "s" else "") + " ago"
+        }
+        val clock = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
+            .format(java.util.Date(arrivedAtSec * 1000))
+        return "$rel at $clock: ${content.take(160)}"
+    }
+}
+
+internal data class PendingInbox(
+    val laneId: String,
+    val items: List<PendingInboxItem>,
+) {
+    companion object {
+        fun empty() = PendingInbox("", emptyList())
+    }
+
+    /** Acknowledge exactly the spoken rows via the receipt-aware consume API. */
+    fun consume(context: PendingConsumeContext) {
+        val base = context.apiBaseUrl ?: return
+        try {
+            val body = org.json.JSONObject().apply {
+                put("lane_id", laneId)
+                put("sequences", org.json.JSONArray().apply { items.forEach { put(it.sequence) } })
+            }
+            val request = Request.Builder().url("$base/api/pending/consume")
+                .post("{}".toRequestBody("application/json".toMediaTypeOrNull()))
+                .apply { context.token?.let { header("x-telepathy-token", it) } }
+                .build()
+            OkHttpClient().newCall(request).execute().close()
+        } catch (e: Exception) {
+            Log.w("Telepathy", "inbox consume: ${e.message}")
+        }
+    }
+}
+
+/// Raw inbox fetch: seq + content + arrived_at per item (meta-entry readout).
+private fun fetchPendingInbox(context: PendingConsumeContext): PendingInbox {
+    val base = context.apiBaseUrl ?: return PendingInbox.empty()
+    return try {
+        val request = Request.Builder().url("$base/api/pending").apply {
+            context.token?.let { header("x-telepathy-token", it) }
+        }.build()
+        val response = OkHttpClient().newCall(request).execute()
+        response.use { r ->
+            if (!r.isSuccessful) return PendingInbox.empty()
+            val body = BoundedHttpResponse.readJsonObject(r, HttpResponseLimits.PENDING_BYTES)
+                ?: return PendingInbox.empty()
+            val laneId = body.optString("lane_id")
+            val arr = body.optJSONArray("items") ?: return PendingInbox(laneId, emptyList())
+            val items = (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                val content = o.optString("content").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                PendingInboxItem(
+                    sequence = parseSafeSequence(o.opt("seq")) ?: return@mapNotNull null,
+                    content = content,
+                    arrivedAtSec = parseSafeSequence(o.opt("arrived_at")) ?: 0L,
+                )
+            }
+            PendingInbox(laneId, items)
+        }
+    } catch (e: Exception) {
+        Log.w("Telepathy", "inbox fetch: ${e.message}")
+        PendingInbox.empty()
     }
 }

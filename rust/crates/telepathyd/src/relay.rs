@@ -43,6 +43,10 @@ pub struct Delivery {
     pub content: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reply_to: Option<String>,
+    /// Epoch seconds when the delivery was queued — the phone speaks
+    /// "3 hours ago at 14:32" from this.
+    #[serde(default)]
+    pub arrived_at: u64,
 }
 
 /// The delivery queue and its sequence high-water mark are one durable
@@ -1431,6 +1435,10 @@ impl RelayState {
             chat_id: chat_id.to_string(),
             content: content.to_string(),
             reply_to,
+            arrived_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
         };
         let previous = {
             let mut q = self.deliveries.lock().unwrap();
