@@ -837,6 +837,7 @@ class AudioCaptureService : Service() {
     // ---- capture start choreography (SCO-first, cued) ----
 
     @Volatile private var lastPhase = "listening"
+    @Volatile private var deferredAnnouncement: String? = null
     @Volatile private var scoPending = false
     private val mainHandler = Handler(Looper.getMainLooper())
     private val teardownGuard = ServiceTeardownGuard()
@@ -2687,6 +2688,16 @@ class AudioCaptureService : Service() {
                     if (msg.repo != null) append(" @${msg.repo}")
                 })
                 announcer.say("$prefix ${msg.text}")
+            }
+            is ServerMsg.Incoming -> {
+                // live patch-through: announce unless mid-interaction (our TTS
+                // through open mic would feed VAD) — defer to next listening phase
+                val text = "Message incoming from ${msg.lane}: ${msg.text.take(160)}"
+                if (lastPhase == "listening") {
+                    announcer.say(text)
+                } else {
+                    deferredAnnouncement = text
+                }
             }
             is ServerMsg.AgentDelta -> {
                 if (!acceptAgentDelta(msg, sourceIdentity)) {
