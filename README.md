@@ -133,6 +133,12 @@ Unicode scalar values. With 256 lanes, the maximum permitted metadata and
 worst-case JSON escaping plus title enrichment serialize below 512 KiB, leaving
 at least a 2× margin below the 1 MiB Node-to-`telepathyd` state-response cap.
 
+## Auth model
+
+Tailscale is the identity layer — services assume they run inside your
+tailnet; no application auth. See `deploy/AUTH.md` for deployment, TLS via
+`tailscale serve`, and the optional-token/relay-secret hardening knobs.
+
 ## Status
 
 - [x] Server: WS bridge, VAD, whisper worker, pi session, text replies
