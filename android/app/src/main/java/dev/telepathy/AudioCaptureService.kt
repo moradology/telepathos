@@ -1103,8 +1103,29 @@ class AudioCaptureService : Service() {
                 val batch = runCatching { fetchPendingItems(pendingContext) }
                     .onFailure { Log.w(TAG, "meta lane worker: ${it.message}") }
                     .getOrDefault(PendingBatch.empty(pendingContext))
+                // Meta entry: speak the templated lane status (deterministic, no
+                // LLM) before cue+open — "which lane am I in" answered at entry.
+                val status = runCatching { fetchLaneStatus(pendingContext) }
+                    .onFailure { Log.w(TAG, "meta status worker: ${it.message}") }
+                    .getOrNull()
                 mainHandler.post {
-                    openAfterLaneValidation(socket, generation, batch, consumeBatch = false)
+                    if (!preparation.isCurrent(socket, generation) ||
+                        !captureRequested || mic.isOpen || ws !== socket) {
+                        preparation.finish(socket, generation)
+                        return@post
+                    }
+                    if (status != null) {
+                        announcer.speakReply(
+                            status,
+                            onDone = {
+                                mainHandler.post {
+                                    openAfterLaneValidation(socket, generation, batch, consumeBatch = false)
+                                }
+                            },
+                        )
+                    } else {
+                        openAfterLaneValidation(socket, generation, batch, consumeBatch = false)
+                    }
                 }
             }.start()
         }
@@ -1379,6 +1400,56 @@ class AudioCaptureService : Service() {
             currentSocketConfigUrl = socketConfigUrl,
             currentSocketConfigToken = socketConfigToken,
         )
+
+    /**
+     * Templated meta-entry status — deterministic, never LLM-generated:
+     * "Meta. On lane kerchunk — cache bug. 2 pending updates."
+     */
+    private fun fetchLaneStatus(context: PendingConsumeContext): String? {
+        val base = context.apiBaseUrl ?: return null
+        return try {
+            val request = Request.Builder().url("$base/api/state").apply {
+                context.token?.let { header("x-telepathy-token", it) }
+            }.build()
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                response.close()
+                return null
+            }
+            val body = BoundedHttpResponse.readJsonObject(response, HttpResponseLimits.LANE_STATE_BYTES)
+                ?: return null
+            val name = body.optString("active")
+            var title = ""
+            body.optJSONArray("lanes")?.let { arr ->
+                val activeId = body.optString("active_id")
+                for (i in 0 until arr.length()) {
+                    val l = arr.optJSONObject(i) ?: continue
+                    if (l.optString("id") == activeId) title = l.optString("title")
+                }
+            }
+            var pending = 0
+            val pReq = Request.Builder().url("$base/api/pending").apply {
+                context.token?.let { header("x-telepathy-token", it) }
+            }.build()
+            val pRes = client.newCall(pReq).execute()
+            pRes.use { pr ->
+                if (pr.isSuccessful) {
+                    val po = BoundedHttpResponse.readJsonObject(pr, HttpResponseLimits.PENDING_BYTES)
+                    pending = po?.optInt("count", 0) ?: 0
+                }
+            }
+            val t = if (title.isNotBlank()) " — $title" else ""
+            val pTxt = when (pending) {
+                0 -> "No pending updates."
+                1 -> "1 pending update."
+                else -> "$pending pending updates."
+            }
+            "Meta. On lane $name$t. $pTxt"
+        } catch (e: Exception) {
+            Log.w(TAG, "meta status: ${e.message}")
+            null
+        }
+    }
 
     /** Fetch pending items for the active lane (oldest first). */
     private fun fetchPendingItems(context: PendingConsumeContext): PendingBatch {
