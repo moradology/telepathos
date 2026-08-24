@@ -32,6 +32,7 @@ use telepathy_proto::{
 use tokio::sync::Mutex;
 
 mod hermes_search;
+mod ntfy;
 mod relay;
 mod transcript;
 

@@ -8,6 +8,7 @@ services:
       - GATEWAY_RELAY_ID=telepathy-dev
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - HERMES_ALLOW_ROOT_GATEWAY=1
+      # - TELEPATHY_NTFY_URL=https://ntfy.sh/telepathy-<your-secret-suffix>
       # - GATEWAY_RELAY_SECRET=${GATEWAY_RELAY_SECRET}
     extra_hosts:
       - "host.docker.internal:host-gateway"

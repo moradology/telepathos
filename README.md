@@ -133,6 +133,13 @@ Unicode scalar values. With 256 lanes, the maximum permitted metadata and
 worst-case JSON escaping plus title enrichment serialize below 512 KiB, leaving
 at least a 2× margin below the 1 MiB Node-to-`telepathyd` state-response cap.
 
+## Push (server → phone)
+
+Cron results and async agent replies ring the phone via [ntfy](https://ntfy.sh):
+`TELEPATHY_NTFY_URL=https://ntfy.sh/<private-topic>` (optionally
+`TELEPATHY_NTFY_TOKEN`). Subscribe to the topic in the ntfy app — deliveries
+arrive as Android notifications instantly; pinch to hear them.
+
 ## Auth model
 
 Tailscale is the identity layer — services assume they run inside your
