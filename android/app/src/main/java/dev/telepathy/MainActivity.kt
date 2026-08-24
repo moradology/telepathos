@@ -14,6 +14,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Spinner
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -34,6 +35,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var urlInput: EditText
     private lateinit var telepathydInput: EditText
     private lateinit var tokenInput: EditText
+    private lateinit var profileSpinner: Spinner
+    private var profiles: MutableMap<String, ConnectionProfiles.Profile> = linkedMapOf()
+    private var activeProfile: String = ConnectionProfiles.DEFAULT_NAME
+    private var suppressSpinner = false
     private lateinit var logView: TextView
     private lateinit var lanesView: TextView
 
@@ -73,8 +78,16 @@ class MainActivity : AppCompatActivity() {
         statusView = TextView(this).apply { typeface = mono; textSize = 14f }
         col.addView(statusView)
 
-        // server control
-        col.addView(label("─── server ────────────────", 12f, dim))
+        // server control — connection profiles
+        col.addView(label("─── connection ─────────────", 12f, dim))
+        profileSpinner = Spinner(this).apply { gravity = android.view.Gravity.CENTER }
+        col.addView(profileSpinner)
+        val profileButtons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val saveProfileBtn = Button(this).apply { text = "save" }
+        val newProfileBtn = Button(this).apply { text = "new" }
+        profileButtons.addView(saveProfileBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        profileButtons.addView(newProfileBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        col.addView(profileButtons)
         urlInput = EditText(this).apply {
             typeface = mono; textSize = 13f
             hint = "wss://<host>:8787  (token mode)"
@@ -96,6 +109,28 @@ class MainActivity : AppCompatActivity() {
             setText(getSharedPreferences("cfg", MODE_PRIVATE).getString("token", ""))
         }
         col.addView(tokenInput)
+        ConnectionProfiles.applyActive(this)
+        urlInput.setText(getSharedPreferences("cfg", MODE_PRIVATE).getString("server", ""))
+        telepathydInput.setText(getSharedPreferences("cfg", MODE_PRIVATE).getString("hermes", ""))
+        tokenInput.setText(getSharedPreferences("cfg", MODE_PRIVATE).getString("token", ""))
+        loadProfiles()
+        saveProfileBtn.setOnClickListener { saveCurrentInto(activeProfile); refreshProfiles() }
+        newProfileBtn.setOnClickListener {
+            val input = EditText(this).apply { hint = "profile name" }
+            android.app.AlertDialog.Builder(this)
+                .setTitle("New connection profile")
+                .setView(input)
+                .setPositiveButton("Create") { _, _ ->
+                    val name = input.text.toString().trim()
+                    if (name.isNotEmpty()) {
+                        saveCurrentInto(name)
+                        activeProfile = name
+                        refreshProfiles()
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
         val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val startBtn = Button(this).apply { text = "talk" }
         val stopBtn = Button(this).apply { text = "stop" }
@@ -161,6 +196,55 @@ class MainActivity : AppCompatActivity() {
         refreshLanes() // user may have toggled settings and come back
     }
 
+    private fun loadProfiles() {
+        profiles = ConnectionProfiles.load(this)
+        activeProfile = ConnectionProfiles.activeName(this)
+        refreshProfiles()
+        val p = profiles[activeProfile] ?: return
+        // populate fields from the ACTIVE profile (fields may have been edited
+        // elsewhere; profile is source of truth on entry)
+        urlInput.setText(p.server)
+        telepathydInput.setText(p.telepathyd)
+        tokenInput.setText(p.token)
+    }
+
+    private fun refreshProfiles() {
+        suppressSpinner = true
+        profileSpinner.adapter = android.widget.ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item,
+            profiles.keys.toList().map { if (it == activeProfile) "★ $it" else it }
+        )
+        val names = profiles.keys.toList()
+        profileSpinner.setSelection(names.indexOf(activeProfile).coerceAtLeast(0))
+        suppressSpinner = false
+        profileSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, pos: Int, id: Long) {
+                if (suppressSpinner) return
+                val name = profiles.keys.toList().getOrNull(pos) ?: return
+                if (name != activeProfile) {
+                    activeProfile = name
+                    ConnectionProfiles.save(this@MainActivity, profiles, activeProfile)
+                    ConnectionProfiles.applyActive(this@MainActivity)
+                    val p = profiles[name] ?: return
+                    urlInput.setText(p.server)
+                    telepathydInput.setText(p.telepathyd)
+                    tokenInput.setText(p.token)
+                    refreshStatus()
+                }
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
+    }
+
+    private fun saveCurrentInto(name: String) {
+        profiles[name] = ConnectionProfiles.Profile(
+            server = urlInput.text.toString().trim(),
+            telepathyd = telepathydInput.text.toString().trim(),
+            token = tokenInput.text.toString().trim(),
+        )
+        ConnectionProfiles.save(this, profiles, activeProfile)
+    }
+
     private fun saveUrl(): Boolean {
         val endpoint = when (val validation = validateWebSocketEndpoint(urlInput.text.toString().trim())) {
             is WebSocketEndpointValidation.Valid -> validation.canonicalUrl
@@ -174,6 +258,7 @@ class MainActivity : AppCompatActivity() {
             .putString("hermes", telepathydInput.text.toString().trim())
             .putString("token", tokenInput.text.toString().trim())
             .apply()
+        saveCurrentInto(activeProfile)
         urlInput.error = null
         if (urlInput.text.toString() != endpoint) urlInput.setText(endpoint)
         return true
