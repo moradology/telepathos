@@ -243,6 +243,8 @@ sealed interface ServerMsg {
     data class Error(val message: String) : ServerMsg
     /** Interaction lifecycle broadcast from the server's state machine (docs/features.md). */
     data class Phase(val value: String) : ServerMsg
+    /** Live delivery: spoken immediately, deferred if we're mid-interaction. */
+    data class Incoming(val lane: String, val text: String) : ServerMsg
     data class DeliveryReceipt(
         val laneId: String,
         val replyTo: String,

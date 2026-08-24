@@ -133,6 +133,15 @@ Unicode scalar values. With 256 lanes, the maximum permitted metadata and
 worst-case JSON escaping plus title enrichment serialize below 512 KiB, leaving
 at least a 2× margin below the 1 MiB Node-to-`telepathyd` state-response cap.
 
+## Delivery semantics
+
+**Connected** (service running, WS up): deliveries patch through live —
+"Message incoming from {lane}: …" spoken immediately. Deferred to the next
+listening phase if you're mid-interaction.
+
+**Disconnected** (service off): deliveries sit in telepathyd's durable inbox,
+read with timestamps at the first meta entry (double-pinch).
+
 ## Push (server → phone)
 
 Cron results and async agent replies ring the phone via [ntfy](https://ntfy.sh):

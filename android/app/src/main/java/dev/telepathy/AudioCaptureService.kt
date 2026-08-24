@@ -2716,6 +2716,12 @@ class AudioCaptureService : Service() {
                 }
                 lastPhase = msg.value
                 LinkState.setPhase(msg.value)
+                if (msg.value == "listening") {
+                    deferredAnnouncement?.let { text ->
+                        deferredAnnouncement = null
+                        announcer.say(text)
+                    }
+                }
                 TriggerLog.record(this, "· ${msg.value}")
             }
             ServerMsg.Ready -> {
