@@ -10,6 +10,10 @@ pub enum MetaAction {
     List,
     New(String),
     Brief(Option<Lane>),
+    /// "note that X" — persist X to the lane's notes, never conversation.
+    Note(String),
+    /// "fork [into X]" — new lane seeded with this lane's context.
+    Fork(Option<String>),
     Unknown,
 }
 
@@ -169,7 +173,7 @@ pub fn parse_meta(raw: &str, reg: &LaneRegistry) -> MetaAction {
 
 /// Apply a parsed action to the registry and produce the spoken confirmation.
 /// The daemon (and any other front-end) calls this — one executor everywhere.
-pub fn execute(reg: &mut LaneRegistry, action: MetaAction) -> String {
+pub fn execute(reg: &mut LaneRegistry, action: MetaAction, notes_path: &std::path::Path) -> String {
     match action {
         MetaAction::Switch(lane) => {
             let name = lane.name.clone();
@@ -211,8 +215,35 @@ pub fn execute(reg: &mut LaneRegistry, action: MetaAction) -> String {
                 lane.name, age
             )
         }
+        MetaAction::Note(text) => {
+            let ts = crate::now_iso();
+            let line = format!(
+                "{{\"note\":{},\"at\":\"{ts}\"}}\n",
+                serde_json::json!(text)
+            );
+            if let Some(dir) = notes_path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let _ = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(notes_path)
+                .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
+            "Noted.".into()
+        }
+        MetaAction::Fork(name_opt) => {
+            let name = name_opt
+                .unwrap_or_else(|| format!("fork-{}", reg.active().name));
+            match reg.create(&name) {
+                Ok(lane) => {
+                    reg.switch(&lane.id);
+                    format!("Forked into {}. Context carried over.", lane.name)
+                }
+                Err(_) => "I couldn't create that conversation name.".into(),
+            }
+        }
         MetaAction::Unknown => {
-            "Meta commands: switch to name, list conversations, new conversation for name, brief."
+            "Meta commands: switch to name, list conversations, new conversation for name, brief, note that, fork."
                 .into()
         }
     }

@@ -33,8 +33,10 @@ use tokio::sync::Mutex;
 
 mod hermes_search;
 mod relay;
+mod transcript;
 
 use relay::RelayState;
+use transcript::TranscriptStore;
 
 struct AppState {
     /// Shared with the relay so gateway `send` actions can validate their
@@ -42,6 +44,7 @@ struct AppState {
     reg: Arc<Mutex<LaneRegistry>>,
     path: PathBuf,
     relay: Arc<RelayState>,
+    transcript: Arc<TranscriptStore>,
     msg_seq: std::sync::atomic::AtomicU64,
     registry_revision: std::sync::atomic::AtomicU64,
     /// A post-rename directory-sync failure means the lane snapshot may have
@@ -187,6 +190,9 @@ impl std::error::Error for InteractionJournalAppendError {}
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let lanes_path = std::env::var("TELEPATHY_LANES").unwrap_or_else(|_| "lanes.json".into());
+    let transcript = Arc::new(TranscriptStore::load(PathBuf::from(
+        std::env::var("TELEPATHY_TRANSCRIPT").unwrap_or_else(|_| "transcript.json".into()),
+    )));
     let relay = Arc::new(RelayState::default());
     let secrets: Vec<String> = std::env::var("TELEPATHY_RELAY_SECRETS")
         .unwrap_or_default()
@@ -272,6 +278,7 @@ async fn main() -> anyhow::Result<()> {
         reg: registry,
         path: lanes_path_buf,
         relay: relay.clone(),
+        transcript: transcript.clone(),
         // Time-seed IDs so a daemon restart cannot reuse tp-0 and collide
         // with a durable late reply from the previous process.
         msg_seq: std::sync::atomic::AtomicU64::new(message_seed),
@@ -1802,7 +1809,9 @@ async fn meta(State(state): State<Arc<AppState>>, Json(body): Json<serde_json::V
         telepathy_lanes::MetaAction::Switch(_)
         | telepathy_lanes::MetaAction::List
         | telepathy_lanes::MetaAction::New(_)
-        | telepathy_lanes::MetaAction::Brief(_) => {
+        | telepathy_lanes::MetaAction::Brief(_)
+        | telepathy_lanes::MetaAction::Note(_)
+        | telepathy_lanes::MetaAction::Fork(_) => {
             let mut reg = state.reg.lock().await;
             if let telepathy_lanes::MetaAction::New(name) = &action {
                 if let Err(error) = reg.validate_create(name) {
@@ -1814,7 +1823,33 @@ async fn meta(State(state): State<Arc<AppState>>, Json(body): Json<serde_json::V
             }
             let before = reg.clone();
             let revision_before = state.registry_revision.load(Ordering::SeqCst);
-            let reply = telepathy_lanes::execute(&mut reg, action.clone());
+            let source_lane = reg.active().id.clone();
+            let notes_path = std::env::var("TELEPATHY_NOTES").unwrap_or_else(|_| "notes.jsonl".into());
+            let reply = telepathy_lanes::execute(&mut reg, action.clone(), std::path::Path::new(&notes_path));
+            // fork: carry a context seed into the new lane's transcript
+            if let telepathy_lanes::MetaAction::Fork(_) = &action {
+                let new_lane = reg.active().id.clone();
+                if new_lane != source_lane {
+                    let turns = state.transcript.recent(&source_lane, 10);
+                    if !turns.is_empty() {
+                        let seed = turns.iter()
+                            .map(|t| format!("{}: {}", t.role, t.text))
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        state.transcript.push(&new_lane, "assistant",
+                            &format!("Context from {} (forked):\n{source_lane}\n---\n{seed}",
+                                     reg.active().name));
+                    }
+                    let seq = state.msg_seq.fetch_add(1, Ordering::SeqCst);
+                    let event = relay::message_event(&new_lane, &reg.active().name,
+                        &format!("This lane continues from '{source_lane}'. Recent context:\n{}",
+                            turns.iter().map(|t| format!("{}: {}", t.role, t.text))
+                                .collect::<Vec<_>>().join("\n")), seq);
+                    if let Err(e) = state.relay.push_inbound(&event).await {
+                        println!("fork seed push: {e}");
+                    }
+                }
+            }
             if lane_selection_changed(&before, &reg) {
                 if let Err(error) = advance_registry_revision(&state.registry_revision) {
                     *reg = before;
@@ -1845,7 +1880,8 @@ async fn meta(State(state): State<Arc<AppState>>, Json(body): Json<serde_json::V
                 }
                 let before = reg.clone();
                 let revision_before = state.registry_revision.load(Ordering::SeqCst);
-                let reply = telepathy_lanes::execute(&mut reg, action.clone());
+                let notes_path = std::env::var("TELEPATHY_NOTES").unwrap_or_else(|_| "notes.jsonl".into());
+            let reply = telepathy_lanes::execute(&mut reg, action.clone(), std::path::Path::new(&notes_path));
                 if lane_selection_changed(&before, &reg) {
                     if let Err(error) = advance_registry_revision(&state.registry_revision) {
                         *reg = before;
@@ -2051,6 +2087,7 @@ mod tests {
         Arc::new(AppState {
             reg: Arc::new(Mutex::new(LaneRegistry::default_direct())),
             path,
+            transcript: Arc::new(TranscriptStore::default()),
             relay: Arc::new(RelayState::default()),
             msg_seq: AtomicU64::new(0),
             registry_revision: AtomicU64::new(10),
@@ -3478,6 +3515,7 @@ mod tests {
         let state = Arc::new(AppState {
             reg: Arc::new(Mutex::new(LaneRegistry::default_direct())),
             path: path.clone(),
+            transcript: Arc::new(TranscriptStore::default()),
             relay: Arc::new(RelayState::default()),
             msg_seq: std::sync::atomic::AtomicU64::new(0),
             registry_revision: std::sync::atomic::AtomicU64::new(0),
@@ -3624,7 +3662,10 @@ mod tests {
         let mut reg = LaneRegistry::default_direct();
         let other = reg.create("other").unwrap();
         reg.switch(&other.id);
-        let relay = Arc::new(RelayState::default());
+        let transcript = Arc::new(TranscriptStore::load(PathBuf::from(
+            std::env::var("TELEPATHY_TRANSCRIPT").unwrap_or_else(|_| "transcript.json".into()),
+        )));
+    let relay = Arc::new(RelayState::default());
         let spoken = relay
             .queue_delivery("telepathy:direct", "direct reply")
             .unwrap();
@@ -3638,6 +3679,7 @@ mod tests {
         let state = Arc::new(AppState {
             reg: Arc::new(Mutex::new(reg)),
             path: temp_path("pending"),
+            transcript: Arc::new(TranscriptStore::default()),
             relay: relay.clone(),
             msg_seq: std::sync::atomic::AtomicU64::new(0),
             registry_revision: std::sync::atomic::AtomicU64::new(0),
@@ -3796,7 +3838,10 @@ mod tests {
     #[tokio::test]
     async fn oversized_http_delivery_boundaries_are_rejected_without_mutation() {
         let pending_path = temp_path("unsafe-delivery-boundary");
-        let relay = Arc::new(RelayState::default());
+        let transcript = Arc::new(TranscriptStore::load(PathBuf::from(
+            std::env::var("TELEPATHY_TRANSCRIPT").unwrap_or_else(|_| "transcript.json".into()),
+        )));
+    let relay = Arc::new(RelayState::default());
         relay.set_persist_path(&pending_path);
         relay
             .queue_delivery("telepathy:direct", "first reply")
@@ -3808,6 +3853,7 @@ mod tests {
         let state = Arc::new(AppState {
             reg: Arc::new(Mutex::new(LaneRegistry::default_direct())),
             path: temp_path("unsafe-delivery-boundary-lanes"),
+            transcript: Arc::new(TranscriptStore::default()),
             relay: relay.clone(),
             msg_seq: std::sync::atomic::AtomicU64::new(0),
             registry_revision: std::sync::atomic::AtomicU64::new(0),
@@ -3939,7 +3985,10 @@ mod tests {
     #[tokio::test]
     async fn consuming_delivery_rejects_malformed_or_unknown_lane_without_mutation() {
         let pending_path = temp_path("delivery-lane-validation");
-        let relay = Arc::new(RelayState::default());
+        let transcript = Arc::new(TranscriptStore::load(PathBuf::from(
+            std::env::var("TELEPATHY_TRANSCRIPT").unwrap_or_else(|_| "transcript.json".into()),
+        )));
+    let relay = Arc::new(RelayState::default());
         relay.set_persist_path(&pending_path);
         let direct_seq = relay
             .queue_gateway_delivery("telepathy:direct", "direct reply", Some("tp-direct"))
@@ -3951,6 +4000,7 @@ mod tests {
         let state = Arc::new(AppState {
             reg: Arc::new(Mutex::new(LaneRegistry::default_direct())),
             path: temp_path("delivery-lane-validation-lanes"),
+            transcript: Arc::new(TranscriptStore::default()),
             relay: relay.clone(),
             msg_seq: AtomicU64::new(0),
             registry_revision: AtomicU64::new(0),
@@ -4111,6 +4161,7 @@ mod tests {
         let state = Arc::new(AppState {
             reg: Arc::new(Mutex::new(reloaded)),
             path: path.clone(),
+            transcript: Arc::new(TranscriptStore::default()),
             relay: Arc::new(RelayState::default()),
             msg_seq: std::sync::atomic::AtomicU64::new(0),
             registry_revision: std::sync::atomic::AtomicU64::new(0),
@@ -4316,6 +4367,7 @@ mod tests {
         let state = Arc::new(AppState {
             reg: Arc::new(Mutex::new(registry)),
             path: path.clone(),
+            transcript: Arc::new(TranscriptStore::default()),
             relay: Arc::new(RelayState::default()),
             msg_seq: AtomicU64::new(0),
             registry_revision: AtomicU64::new(17),
@@ -4400,6 +4452,7 @@ mod tests {
         let state = Arc::new(AppState {
             reg: Arc::new(Mutex::new(LaneRegistry::default_direct())),
             path: path.clone(),
+            transcript: Arc::new(TranscriptStore::default()),
             relay: Arc::new(RelayState::default()),
             msg_seq: std::sync::atomic::AtomicU64::new(0),
             registry_revision: std::sync::atomic::AtomicU64::new(0),
@@ -4468,6 +4521,7 @@ mod tests {
         let state = Arc::new(AppState {
             reg: Arc::new(Mutex::new(LaneRegistry::default_direct())),
             path: path.clone(),
+            transcript: Arc::new(TranscriptStore::default()),
             relay: Arc::new(RelayState::default()),
             msg_seq: std::sync::atomic::AtomicU64::new(0),
             registry_revision: std::sync::atomic::AtomicU64::new(0),

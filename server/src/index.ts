@@ -1,6 +1,6 @@
 import https from "node:https";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, appendFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
 import { config } from "./config.js";
@@ -2061,8 +2061,22 @@ export function executeMeta(action: MetaAction, reg: LaneRegistry = lanes): stri
       }
       return `Lane ${lane.name}. Last active ${ageText} ago. Full briefing arrives with the Hermes connector.`;
     }
+    case "note": {
+      const line = JSON.stringify({ note: action.text, at: new Date().toISOString(), lane: activeLane(reg).id }) + "\n";
+      try { appendFileSync("notes.jsonl", line); } catch {}
+      return "Noted.";
+    }
+    case "fork": {
+      const name = (action.name || `fork-${activeLane(reg).name}`).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+      const invalid = laneNameValidationError(name);
+      if (invalid) return invalid.message;
+      const lane = createLane(reg, name);
+      switchLane(reg, lane.id);
+      // context seeding runs in telepathyd when configured (transcript summary)
+      return `Forked into ${lane.name}. Context carry-over requires the telepathyd daemon.`;
+    }
     case "unknown":
-      return "Meta commands: switch to name, list conversations, new conversation for name, brief.";
+      return "Meta commands: switch to name, list conversations, new conversation for name, brief, note that, fork.";
   }
 }
 

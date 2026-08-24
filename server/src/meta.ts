@@ -13,6 +13,8 @@ export type MetaAction =
   | { op: "list" }
   | { op: "new"; name: string }
   | { op: "brief"; lane: Lane | null }
+  | { op: "note"; text: string }
+  | { op: "fork"; name: string | null }
   | { op: "unknown" };
 
 function normalize(s: string): string {
@@ -70,6 +72,22 @@ function stripLead(text: string, patterns: string[]): string {
 export function parseMeta(rawTranscript: string, reg: LaneRegistry): MetaAction {
   const text = normalize(rawTranscript);
   if (!text) return { op: "unknown" };
+  const words = text.split(" ");
+
+  // note that X / remember that X — memory capture, never a task
+  if (words.length > 1 && ["note", "remember", "keep"].includes(words[0])) {
+    let rest = words.slice(1).join(" ");
+    rest = rest.replace(/^(that|in mind that) /, "").trim();
+    if (rest) return { op: "note", text: rest };
+    return { op: "unknown" };
+  }
+
+  // fork [into X] — new lane seeded with this lane's context
+  if (words[0] === "fork") {
+    let rest = words.slice(1).join(" ");
+    rest = rest.replace(/^(into|to|as|for) /, "").trim();
+    return { op: "fork", name: rest || null };
+  }
 
   // switch back — REMOVED on purpose: history/navigation is the agent's job
   // (it gets tools against the lane API); see docs/features.md.
