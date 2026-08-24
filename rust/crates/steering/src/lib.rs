@@ -9,6 +9,17 @@ pub mod openai;
 
 pub use openai::OpenAiProvider;
 
+/// The complete spoken reply limit shared with the bridge and Android client.
+/// Provider responses are allowed a small, fixed JSON envelope in addition to
+/// this payload; see `MAX_PROVIDER_RESPONSE_BYTES`.
+pub const MAX_REPLY_TEXT_BYTES: usize = 512 * 1024;
+/// OpenAI-compatible response metadata (the choices/message envelope and a
+/// bounded tool-call turn) may accompany a spoken reply. Keep this separate
+/// from the reply contract so an upstream response cannot grow without bound.
+pub const MAX_PROVIDER_JSON_OVERHEAD_BYTES: usize = 64 * 1024;
+pub const MAX_PROVIDER_RESPONSE_BYTES: usize =
+    MAX_REPLY_TEXT_BYTES + MAX_PROVIDER_JSON_OVERHEAD_BYTES;
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -153,17 +164,23 @@ pub fn execute_tool(reg: &mut LaneRegistry, tool: SteeringTool, args: &Value) ->
                 None => format!(
                     "No lane matching \"{}\". Available: {}",
                     a.name,
-                    reg.lanes.iter().map(|l| l.name.as_str()).collect::<Vec<_>>().join(", ")
+                    reg.lanes
+                        .iter()
+                        .map(|l| l.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
             },
             Err(_) => "Argument 'name' is required.".into(),
         },
         SteeringTool::CreateLane => match serde_json::from_value::<NameArgs>(args.clone()) {
-            Ok(a) => {
-                let lane = reg.create(&a.name);
-                reg.switch(&lane.id);
-                format!("Created and switched to {}.", lane.name)
-            }
+            Ok(a) => match reg.create(&a.name) {
+                Ok(lane) => {
+                    reg.switch(&lane.id);
+                    format!("Created and switched to {}.", lane.name)
+                }
+                Err(_) => "The lane name is invalid or too long.".into(),
+            },
             Err(_) => "Argument 'name' is required.".into(),
         },
         SteeringTool::SearchConversations => {
@@ -234,7 +251,7 @@ impl Provider for NullProvider {
 }
 
 pub const META_SYSTEM: &str = "You are the steering agent for Telepathy, a voice interface to coding agents. \
-Your ONLY job is managing conversation lanes: listing, switching, creating, reporting activity and statistics. \
+Your ONLY job is managing conversation lanes: listing, switching, creating, searching, reporting activity and statistics. \
 Rules: your output is spoken aloud through earbuds — be terse, no markdown, no code, no lists over five items. \
 Never discuss project content, never answer coding questions — if asked, tell the user to switch to the right \
 lane and ask there. Prefer calling tools over guessing. If the target lane is ambiguous, ask one short \
@@ -247,41 +264,34 @@ pub async fn run<P: Provider>(
     utterance: &str,
 ) -> Result<String> {
     let tools = tools();
-    let mut messages = json!([
-        { "role": "system", "content": META_SYSTEM },
-        { "role": "user", "content": utterance },
-    ]);
+    let mut messages = json!([{ "role": "user", "content": utterance }]);
 
     for _round in 0..4 {
         match provider.step(META_SYSTEM, &tools, &messages).await? {
             StepOutcome::Text(text) => return Ok(text),
             StepOutcome::ToolCalls(calls) => {
+                // The assistant turn must contain all calls as one message.
+                // Splitting it per call produces invalid OpenAI history and
+                // breaks providers that issue parallel tool calls.
+                messages
+                    .as_array_mut()
+                    .unwrap()
+                    .push(openai::assistant_tool_calls_message(&calls));
                 for call in calls {
                     // resolve ONCE here; execute_tool never sees strings
                     let Some(tool) = SteeringTool::from_name(&call.name) else {
-                        messages.as_array_mut().unwrap().push(json!({
-                            "role": "assistant",
-                            "tool_calls": [{
-                                "id": call.id, "name": call.name, "arguments": call.arguments
-                            }]
-                        }));
-                        messages.as_array_mut().unwrap().push(json!({
-                            "role": "tool", "content": format!("unknown tool {}", call.name)
-                        }));
+                        messages.as_array_mut().unwrap().push(openai::tool_message(
+                            &call,
+                            format!("unknown tool {}", call.name),
+                        ));
                         continue;
                     };
-                    let args: Value =
-                        serde_json::from_str(&call.arguments).unwrap_or(json!({}));
+                    let args: Value = serde_json::from_str(&call.arguments).unwrap_or(json!({}));
                     let result = execute_tool(reg, tool, &args);
-                    messages.as_array_mut().unwrap().push(json!({
-                        "role": "assistant",
-                        "tool_calls": [{
-                            "id": call.id, "name": call.name, "arguments": call.arguments
-                        }]
-                    }));
-                    messages.as_array_mut().unwrap().push(json!({
-                        "role": "tool", "content": result
-                    }));
+                    messages
+                        .as_array_mut()
+                        .unwrap()
+                        .push(openai::tool_message(&call, result));
                 }
             }
         }

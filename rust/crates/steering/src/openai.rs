@@ -4,10 +4,12 @@
 //! Deliberately tiny: one POST per step, no streaming (spoken output doesn't
 //! need it), no retries (the caller re-asks by voice anyway).
 
-use anyhow::Result;
+use crate::{
+    Provider, StepOutcome, ToolCall, ToolSpec, MAX_PROVIDER_RESPONSE_BYTES, MAX_REPLY_TEXT_BYTES,
+};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use crate::{Provider, StepOutcome, ToolCall, ToolSpec};
 
 #[derive(Debug, Clone)]
 pub struct OpenAiProvider {
@@ -53,18 +55,64 @@ pub fn parse_response(body: &Value) -> Result<StepOutcome> {
             arr.iter()
                 .map(|c| ToolCall {
                     id: c["id"].as_str().unwrap_or_default().to_string(),
-                    name: c["function"]["name"].as_str().unwrap_or_default().to_string(),
-                    arguments: c["function"]["arguments"].as_str().unwrap_or("{}").to_string(),
+                    name: c["function"]["name"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_string(),
+                    arguments: c["function"]["arguments"]
+                        .as_str()
+                        .unwrap_or("{}")
+                        .to_string(),
                 })
                 .collect()
         })
         .unwrap_or_default();
     if calls.is_empty() {
         let text = msg["content"].as_str().unwrap_or("").to_string();
+        if text.len() > MAX_REPLY_TEXT_BYTES {
+            anyhow::bail!("provider reply exceeds the reply byte limit");
+        }
         Ok(StepOutcome::Text(text))
     } else {
         Ok(StepOutcome::ToolCalls(calls))
     }
+}
+
+/// Read an OpenAI-compatible response without accepting an unbounded body.
+///
+/// The content-length check is only an early rejection: chunked and dishonest
+/// peers are still checked before each append. Errors intentionally omit the
+/// provider's status, URL, and body because callers may surface them to API
+/// clients.
+async fn read_response_body_limited(mut response: reqwest::Response) -> Result<Vec<u8>> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_PROVIDER_RESPONSE_BYTES as u64)
+    {
+        return Err(anyhow!("provider response exceeds the byte limit"));
+    }
+
+    let mut body = Vec::with_capacity(
+        response
+            .content_length()
+            .unwrap_or(0)
+            .min(MAX_PROVIDER_RESPONSE_BYTES as u64) as usize,
+    );
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| anyhow!("provider response could not be read"))?
+    {
+        let next_len = body
+            .len()
+            .checked_add(chunk.len())
+            .ok_or_else(|| anyhow!("provider response exceeds the byte limit"))?;
+        if next_len > MAX_PROVIDER_RESPONSE_BYTES {
+            return Err(anyhow!("provider response exceeds the byte limit"));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
 }
 
 // Assistant messages carrying tool_calls must round-trip in OpenAI shape.
@@ -77,6 +125,32 @@ pub fn assistant_message_value(msg: &Value) -> Value {
         out["tool_calls"] = tc.clone();
     }
     out
+}
+
+/// Encode the complete assistant tool-call turn. OpenAI requires one
+/// assistant message containing every call, followed by one tool message per
+/// call carrying the matching tool_call_id.
+pub fn assistant_tool_calls_message(calls: &[ToolCall]) -> Value {
+    json!({
+        "role": "assistant",
+        "content": null,
+        "tool_calls": calls.iter().map(|call| json!({
+            "id": call.id,
+            "type": "function",
+            "function": {
+                "name": call.name,
+                "arguments": call.arguments,
+            }
+        })).collect::<Vec<_>>(),
+    })
+}
+
+pub fn tool_message(call: &ToolCall, content: impl Into<String>) -> Value {
+    json!({
+        "role": "tool",
+        "tool_call_id": call.id,
+        "content": content.into(),
+    })
 }
 
 #[async_trait]
@@ -96,16 +170,18 @@ impl Provider for OpenAiProvider {
             .bearer_auth(&self.api_key)
             .json(&body)
             .send()
-            .await?;
+            .await
+            .map_err(|_| anyhow!("provider request failed"))?;
         let status = res.status();
-        let text = res.text().await?;
+        let body = read_response_body_limited(res).await?;
         if !status.is_success() {
-            anyhow::bail!("provider {status}: {text}");
+            anyhow::bail!("provider request failed");
         }
-        parse_response(&serde_json::from_str(&text)?)
+        let response = serde_json::from_slice(&body)
+            .map_err(|_| anyhow!("provider returned malformed JSON"))?;
+        parse_response(&response)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -115,7 +191,12 @@ mod tests {
 
     #[test]
     fn request_body_has_tools_in_openai_shape() {
-        let body = build_request_body("m", "sys", &tools(), &json!([{"role":"user","content":"hi"}]));
+        let body = build_request_body(
+            "m",
+            "sys",
+            &tools(),
+            &json!([{"role":"user","content":"hi"}]),
+        );
         assert_eq!(body["model"], "m");
         assert_eq!(body["messages"][0]["role"], "system");
         assert_eq!(body["tools"][0]["type"], "function");
@@ -142,25 +223,59 @@ mod tests {
         }
     }
 
+    #[test]
+    fn text_responses_obey_the_exact_utf8_reply_limit() {
+        fn completion(content: String) -> Value {
+            json!({
+                "choices": [{"message": {"role": "assistant", "content": content}}]
+            })
+        }
+
+        let exact_ascii = "a".repeat(MAX_REPLY_TEXT_BYTES);
+        assert!(matches!(
+            parse_response(&completion(exact_ascii)),
+            Ok(StepOutcome::Text(_))
+        ));
+
+        let exact_multibyte = "🦀".repeat(MAX_REPLY_TEXT_BYTES / "🦀".len());
+        assert_eq!(exact_multibyte.len(), MAX_REPLY_TEXT_BYTES);
+        assert!(matches!(
+            parse_response(&completion(exact_multibyte)),
+            Ok(StepOutcome::Text(_))
+        ));
+
+        assert!(parse_response(&completion("a".repeat(MAX_REPLY_TEXT_BYTES + 1))).is_err());
+    }
+
+    #[test]
+    fn assistant_history_uses_openai_shape_for_multiple_calls() {
+        let calls = vec![
+            ToolCall {
+                id: "c1".into(),
+                name: "list_lanes".into(),
+                arguments: "{}".into(),
+            },
+            ToolCall {
+                id: "c2".into(),
+                name: "active_lane".into(),
+                arguments: "{}".into(),
+            },
+        ];
+        let assistant = assistant_tool_calls_message(&calls);
+        assert_eq!(assistant["role"], "assistant");
+        assert_eq!(assistant["tool_calls"].as_array().unwrap().len(), 2);
+        assert_eq!(assistant["tool_calls"][0]["type"], "function");
+        assert_eq!(
+            assistant["tool_calls"][1]["function"]["name"],
+            "active_lane"
+        );
+        assert_eq!(tool_message(&calls[1], "ok")["tool_call_id"], "c2");
+    }
+
     #[tokio::test]
     async fn full_loop_with_fake_provider_switches_lane() {
         // A fake OpenAI-shaped server isn't needed: exercise run() through a
         // scripted Provider to prove loop+tools integration.
-        struct Scripted;
-        #[async_trait]
-        impl Provider for Scripted {
-            async fn step(&self, _s: &str, _t: &[ToolSpec], _m: &Value) -> Result<StepOutcome> {
-                Ok(StepOutcome::ToolCalls(vec![ToolCall {
-                    id: "1".into(),
-                    name: "create_lane".into(),
-                    arguments: "{\"name\":\"demo\"}".into(),
-                }, ToolCall {
-                    id: "2".into(),
-                    name: "active_lane".into(),
-                    arguments: "{}".into(),
-                }]))
-            }
-        }
         struct TextOnly;
         #[async_trait]
         impl Provider for TextOnly {
@@ -179,5 +294,54 @@ mod tests {
         // and the loop terminates on a plain-text provider
         let out = run(&TextOnly, &mut reg, "hi").await.unwrap();
         assert_eq!(out, "in demo");
+    }
+
+    #[tokio::test]
+    async fn run_emits_one_assistant_turn_and_matching_tool_messages() {
+        use std::sync::{Arc, Mutex};
+
+        struct Scripted(Arc<Mutex<Option<Value>>>);
+        #[async_trait]
+        impl Provider for Scripted {
+            async fn step(
+                &self,
+                _s: &str,
+                _t: &[ToolSpec],
+                messages: &Value,
+            ) -> Result<StepOutcome> {
+                if messages.as_array().unwrap().len() == 1 {
+                    Ok(StepOutcome::ToolCalls(vec![
+                        ToolCall {
+                            id: "c1".into(),
+                            name: "list_lanes".into(),
+                            arguments: "{}".into(),
+                        },
+                        ToolCall {
+                            id: "c2".into(),
+                            name: "active_lane".into(),
+                            arguments: "{}".into(),
+                        },
+                    ]))
+                } else {
+                    *self.0.lock().unwrap() = Some(messages.clone());
+                    Ok(StepOutcome::Text("done".into()))
+                }
+            }
+        }
+
+        let seen = Arc::new(Mutex::new(None));
+        let mut reg = LaneRegistry::default_direct();
+        assert_eq!(
+            run(&Scripted(seen.clone()), &mut reg, "list")
+                .await
+                .unwrap(),
+            "done"
+        );
+        let messages = seen.lock().unwrap().clone().unwrap();
+        let entries = messages.as_array().unwrap();
+        assert_eq!(entries[1]["role"], "assistant");
+        assert_eq!(entries[1]["tool_calls"].as_array().unwrap().len(), 2);
+        assert_eq!(entries[2]["tool_call_id"], "c1");
+        assert_eq!(entries[3]["tool_call_id"], "c2");
     }
 }

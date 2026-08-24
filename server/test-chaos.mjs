@@ -1,5 +1,5 @@
 // Test 6: backpressure + severance via chaos proxy.
-// Client speaks through :8888 (throttled). Server's TTS reply must still arrive
+// Client speaks through :8888 (throttled). Server's text reply must still arrive
 // despite the retry path being forced, and the server must survive the severing.
 import WebSocket from "ws";
 
@@ -9,12 +9,14 @@ async function test6_backpressureUnderChaos() {
   const ws = new WebSocket("ws://localhost:8888"); // through the chaos proxy
   await new Promise((res) => ws.on("open", res));
 
-  let ttsBytes = 0;
+  let agentText = "";
   let sawAgentEnd = false;
 
   ws.on("message", (data, isBinary) => {
-    if (isBinary) { ttsBytes += data.length; return; }
-    if (JSON.parse(data.toString()).type === "agent_end") sawAgentEnd = true;
+    if (isBinary) return;
+    const message = JSON.parse(data.toString());
+    if (message.type === "agent_delta") agentText += message.text ?? "";
+    if (message.type === "agent_end") sawAgentEnd = true;
   });
 
   // speak
@@ -25,10 +27,11 @@ async function test6_backpressureUnderChaos() {
   for (let n = 0; n < 25; n++) { ws.send(quiet); await sleep(80); }
 
   // The proxy severs at ~8s: after one full throttled interaction. This forces the
-  // server's backpressure retry path (44 TTS frames × 120ms throttle ≈ 5s drain),
+  // server's backpressure retry path (throttled text frames),
   // then kills the socket mid-idle. Assert the full reply made it through.
   await sleep(12000);
-  check("chaos: full tts streamed through throttle", sawAgentEnd && ttsBytes > 100000, `end=${sawAgentEnd} bytes=${ttsBytes}`);
+  check("chaos: text reply streamed through throttle", sawAgentEnd && agentText.length > 0,
+    `end=${sawAgentEnd} text=${JSON.stringify(agentText)}`);
 
   // fresh client through the same proxy — server must be healthy
   const ws2 = new WebSocket("ws://localhost:8888");

@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
+    "test": "npm run test:focused",
+    "test:focused": "npm run build && node test-auth.mjs && node test-fsm.mjs && node test-meta.mjs && node test-protocol-properties.mjs && node test-transcriber-path.mjs && node test-transcriber-cancellation.mjs && node test-provider-response.mjs && node test-hermes.mjs && node test-interaction-outbox.mjs && node test-reply-text.mjs && node test-reply-ack-persistence.mjs && node test-reply-ack-owner-cache.mjs && node test-server-interactions.mjs",
     "start": "node dist/index.js",
     "dev": "tsc && node dist/index.js"
   },

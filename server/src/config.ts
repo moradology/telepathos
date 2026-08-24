@@ -1,5 +1,9 @@
 export const config = {
   port: Number(process.env.TELEPATHY_PORT ?? 8787),
+  // Remote binds require an explicit token + TLS configuration. Keep the
+  // default loopback-only so a fresh install cannot expose an unauthenticated
+  // cleartext microphone endpoint on the LAN.
+  host: process.env.TELEPATHY_HOST ?? "127.0.0.1",
   /** RMS threshold for speech detection (16-bit PCM). Tune per mic. */
   vadThreshold: Number(process.env.TELEPATHY_VAD_THRESHOLD ?? 600),
   /** Silence duration (ms) that ends an utterance. */

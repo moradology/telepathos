@@ -6,7 +6,11 @@ const events = [];
 let ttsBytes = 0;
 
 ws.on("open", () => {
-  ws.send(JSON.stringify({ type: "hello", device: "test" }));
+  ws.send(JSON.stringify({
+    type: "hello",
+    device: "test",
+    installation_id: "test-client-installation",
+  }));
   const loud = Buffer.alloc(3200);
   for (let i = 0; i < 1600; i++) loud.writeInt16LE((i % 20) < 10 ? 8000 : -8000, i * 2);
   for (let n = 0; n < 10; n++) ws.send(loud); // 1s loud "speech"

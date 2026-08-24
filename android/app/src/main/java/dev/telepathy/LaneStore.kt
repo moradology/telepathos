@@ -24,60 +24,91 @@ object LaneStore {
         val pending: Int,
     )
 
-    fun baseUrl(ctx: Context): String? =
+    private fun configuredUrl(ctx: Context): String? =
         ctx.getSharedPreferences("cfg", Context.MODE_PRIVATE)
-            .getString("hermes", null)?.takeIf { it.isNotBlank() }
+            .getString("hermes", null)?.trimEnd('/')?.takeIf { it.isNotBlank() }
+
+    private fun token(ctx: Context): String? =
+        ctx.getSharedPreferences("cfg", Context.MODE_PRIVATE)
+            .getString("token", null)?.takeIf { it.isNotBlank() }
+
+    /** True when an authoritative telepathyd endpoint has been configured. */
+    fun isConfigured(ctx: Context): Boolean = configuredUrl(ctx) != null
+
+    fun baseUrl(ctx: Context): String? {
+        val url = configuredUrl(ctx) ?: return null
+        if (token(ctx) != null && !url.startsWith("https://", ignoreCase = true)) {
+            Log.e("Telepathy", "token-bearing lane API requires https://")
+            return null
+        }
+        return url
+    }
+
+    private fun request(ctx: Context, url: String): Request.Builder =
+        Request.Builder().url(url).apply {
+            token(ctx)?.let { header("x-telepathy-token", it) }
+        }
 
     /** Full registry + active name + per-lane pending counts. Null when unreachable/unset. */
     fun fetchState(ctx: Context): Pair<List<LaneUi>, String>? {
         val base = baseUrl(ctx) ?: return null
-        val res = client.newCall(Request.Builder().url("$base/api/state").build()).execute()
-        res.use { r ->
-            if (!r.isSuccessful) return null
-            val o = JSONObject(r.body?.string() ?: return null)
+        return try {
+            val response = client.newCall(request(ctx, "$base/api/state").build()).execute()
+            if (!response.isSuccessful) {
+                response.close()
+                return null
+            }
+            val o = BoundedHttpResponse.readJsonObject(response, HttpResponseLimits.LANE_STATE_BYTES)
+                ?: return null
             val activeName = o.optString("active")
             val activeId = o.optString("active_id")
-            val pendingByLane = pendingMap(base)
+            if (!isValidLaneId(activeId)) return null
             val arr = o.optJSONArray("lanes") ?: return null
-            val lanes = (0 until arr.length()).mapNotNull { i ->
-                val l = arr.optJSONObject(i) ?: return@mapNotNull null
+            val lanes = (0 until arr.length()).map { i ->
+                val l = arr.optJSONObject(i)
+                    ?: throw IllegalArgumentException("invalid lane entry")
                 val id = l.optString("id")
+                if (!isValidLaneId(id)) throw IllegalArgumentException("invalid lane id")
                 LaneUi(
                     id = id,
                     name = l.optString("name"),
                     title = l.optString("title").takeIf { it.isNotEmpty() },
                     active = id == activeId,
-                    pending = pendingByLane[id] ?: 0,
+                    pending = l.optInt("pending", 0),
                 )
             }
-            return lanes to activeName
-        }
-    }
-
-    private fun pendingMap(base: String): Map<String, Int> {
-        val res = client.newCall(
-            Request.Builder().url("$base/api/pending").build()
-        ).execute()
-        res.use { r ->
-            if (!r.isSuccessful) return emptyMap()
-            val o = JSONObject(r.body?.string() ?: return emptyMap())
-            return mapOf(o.optString("lane_id") to o.optInt("count", 0))
+            lanes to activeName
+        } catch (e: Exception) {
+            Log.w("Telepathy", "lane state unavailable: ${e.message}")
+            null
         }
     }
 
     /** Switch to a lane by id; announces via the event log. */
     fun switch(ctx: Context, laneId: String): Boolean {
         val base = baseUrl(ctx) ?: return false
-        val body = """{"id":"$laneId"}""".toRequestBody("application/json".toMediaTypeOrNull())
-        val res = client.newCall(
-            Request.Builder().url("$base/api/lanes/active").post(body).build()
-        ).execute()
-        res.use { r ->
-            if (!r.isSuccessful) return false
-            val o = JSONObject(r.body?.string() ?: return false)
-            return o.optBoolean("ok", false)
+        val json = laneSwitchRequestJson(laneId) ?: return false
+        val body = json.toRequestBody("application/json".toMediaTypeOrNull())
+        return try {
+            val response = client.newCall(
+                request(ctx, "$base/api/lanes/active").post(body).build()
+            ).execute()
+            if (!response.isSuccessful) {
+                response.close()
+                return false
+            }
+            val o = BoundedHttpResponse.readJsonObject(response, HttpResponseLimits.LANE_MUTATION_BYTES)
+                ?: return false
+            o.optBoolean("ok", false)
+        } catch (e: Exception) {
+            Log.w("Telepathy", "lane switch unavailable: ${e.message}")
+            false
         }
     }
+
+    /** Pure, validated serializer used by [switch]; JSONObject performs JSON escaping. */
+    internal fun laneSwitchRequestJson(laneId: String): String? =
+        laneId.takeIf(::isValidLaneId)?.let { JSONObject().put("id", it).toString() }
 
     /** Cycle to the next lane in registry order. Fire-and-forget; logs outcome. */
     fun cycle(ctx: Context) {

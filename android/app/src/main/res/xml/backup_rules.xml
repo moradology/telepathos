@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Legacy Auto Backup: never copy credentials, installation identity, or receipt state. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="." />
+</full-backup-content>

@@ -8,6 +8,7 @@ import android.graphics.Typeface
 import android.os.Bundle
 import android.provider.Settings
 import android.text.Editable
+import android.text.InputType
 import android.text.TextWatcher
 import android.widget.Button
 import android.widget.EditText
@@ -31,6 +32,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var phaseView: TextView
     private lateinit var statusView: TextView
     private lateinit var urlInput: EditText
+    private lateinit var telepathydInput: EditText
+    private lateinit var tokenInput: EditText
     private lateinit var logView: TextView
     private lateinit var lanesView: TextView
 
@@ -74,10 +77,25 @@ class MainActivity : AppCompatActivity() {
         col.addView(label("─── server ────────────────", 12f, dim))
         urlInput = EditText(this).apply {
             typeface = mono; textSize = 13f
-            hint = "ws://<host>:8787  (tailscale ok)"
+            hint = "wss://<host>:8787  (token mode)"
             setText(getSharedPreferences("cfg", MODE_PRIVATE).getString("server", ""))
         }
         col.addView(urlInput)
+        col.addView(label("telepathyd base URL", 12f, dim))
+        telepathydInput = EditText(this).apply {
+            typeface = mono; textSize = 13f
+            hint = "https://<host>:8790  (token mode)"
+            setText(getSharedPreferences("cfg", MODE_PRIVATE).getString("hermes", ""))
+        }
+        col.addView(telepathydInput)
+        col.addView(label("bridge token (optional)", 12f, dim))
+        tokenInput = EditText(this).apply {
+            typeface = mono; textSize = 13f
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            hint = "TELEPATHY_TOKEN"
+            setText(getSharedPreferences("cfg", MODE_PRIVATE).getString("token", ""))
+        }
+        col.addView(tokenInput)
         val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val startBtn = Button(this).apply { text = "talk" }
         val stopBtn = Button(this).apply { text = "stop" }
@@ -113,7 +131,7 @@ class MainActivity : AppCompatActivity() {
         col.addView(logView)
 
         startBtn.setOnClickListener {
-            saveUrl()
+            if (!saveUrl()) return@setOnClickListener
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
                 != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 1)
@@ -143,9 +161,22 @@ class MainActivity : AppCompatActivity() {
         refreshLanes() // user may have toggled settings and come back
     }
 
-    private fun saveUrl() {
+    private fun saveUrl(): Boolean {
+        val endpoint = when (val validation = validateWebSocketEndpoint(urlInput.text.toString().trim())) {
+            is WebSocketEndpointValidation.Valid -> validation.canonicalUrl
+            is WebSocketEndpointValidation.Invalid -> {
+                urlInput.error = "Invalid server address: ${validation.reason}"
+                return false
+            }
+        }
         getSharedPreferences("cfg", MODE_PRIVATE).edit()
-            .putString("server", urlInput.text.toString().trim()).apply()
+            .putString("server", endpoint)
+            .putString("hermes", telepathydInput.text.toString().trim())
+            .putString("token", tokenInput.text.toString().trim())
+            .apply()
+        urlInput.error = null
+        if (urlInput.text.toString() != endpoint) urlInput.setText(endpoint)
+        return true
     }
 
     private fun refreshAll() = refreshStatus().also { refreshLog() }

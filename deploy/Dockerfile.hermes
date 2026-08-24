@@ -1,6 +1,9 @@
 # Hermes gateway for the telepathy relay test.
 # Builds from the upstream repo; first build downloads a few hundred MB.
+FROM ghcr.io/astral-sh/uv:latest@sha256:e85be844203885286c60ffad8a858d48afb6c5a5c237ca0e67f12e74b8f174b1 AS uv
 FROM python:3.11-slim
+
+COPY --from=uv /uv /uvx /bin/
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git curl ripgrep ca-certificates \
@@ -9,9 +12,9 @@ RUN apt-get update \
 RUN git clone --depth 1 https://github.com/NousResearch/hermes-agent /opt/hermes
 WORKDIR /opt/hermes
 
-# Hermes requires an editable/synced install (its build guard rejects plain
-# `pip install .`); uv sync creates the project venv it expects.
-RUN pip install --no-cache-dir uv && uv sync
+# Hermes requires an editable/synced install; uv sync creates the project venv
+# it expects.
+RUN uv sync
 
 COPY hermes-config.yaml /root/.hermes/config.yaml
 

@@ -2,7 +2,7 @@
 //! Requires registry evidence before intercepting lane names — collision
 //! safety with coding speech ("switch to main") is structural.
 
-use crate::{Lane, LaneRegistry};
+use crate::{Lane, LaneCreateError, LaneRegistry};
 
 #[derive(Debug, Clone)]
 pub enum MetaAction {
@@ -38,7 +38,9 @@ fn levenshtein(a: &str, b: &str) -> usize {
         dp[0] = i;
         for j in 1..=b.len() {
             let tmp = dp[j];
-            dp[j] = (dp[j] + 1).min(dp[j - 1] + 1).min(prev + if a[i - 1] == b[j - 1] { 0 } else { 1 });
+            dp[j] = (dp[j] + 1)
+                .min(dp[j - 1] + 1)
+                .min(prev + if a[i - 1] == b[j - 1] { 0 } else { 1 });
             prev = tmp;
         }
     }
@@ -99,12 +101,17 @@ pub fn parse_meta(raw: &str, reg: &LaneRegistry) -> MetaAction {
     // new conversation [for|about|called] X — keyword required on both sides
     let words: Vec<&str> = text.split(' ').collect();
     if matches!(words.first(), Some(&"new" | &"start" | &"create")) {
-        if let Some(kpos) = words.iter().position(|w| matches!(*w, "conversation" | "lane" | "chat")) {
+        if let Some(kpos) = words
+            .iter()
+            .position(|w| matches!(*w, "conversation" | "lane" | "chat"))
+        {
             // optional preposition after the keyword, then the name
             let rest_start = kpos + 1;
             let name = if rest_start < words.len()
-                && matches!(words[rest_start], "for" | "about" | "called" | "named" | "to")
-            {
+                && matches!(
+                    words[rest_start],
+                    "for" | "about" | "called" | "named" | "to"
+                ) {
                 words[rest_start + 1..].join(" ")
             } else {
                 words[rest_start..].join(" ")
@@ -116,8 +123,12 @@ pub fn parse_meta(raw: &str, reg: &LaneRegistry) -> MetaAction {
     }
 
     // brief [me] [on X]
-    if words.first() == Some(&"brief") || text == "catch me up" || words.first() == Some(&"status") {
-        let target = if let Some(p) = words.iter().position(|w| *w == "on" || *w == "about" || *w == "for") {
+    if words.first() == Some(&"brief") || text == "catch me up" || words.first() == Some(&"status")
+    {
+        let target = if let Some(p) = words
+            .iter()
+            .position(|w| *w == "on" || *w == "about" || *w == "for")
+        {
             Some(words[p + 1..].join(" "))
         } else {
             None
@@ -126,11 +137,18 @@ pub fn parse_meta(raw: &str, reg: &LaneRegistry) -> MetaAction {
     }
 
     // switch/go/work on X — lane match REQUIRED, else fall through
-    if matches!(words.first(), Some(&"switch" | &"go" | &"work" | &"move" | &"jump")) {
+    if matches!(
+        words.first(),
+        Some(&"switch" | &"go" | &"work" | &"move" | &"jump")
+    ) {
         let remainder: String = match words.first() {
             Some(&"go") => {
                 // "go to X" / bare "go X"
-                if words.get(1) == Some(&&"to") { words[2..].join(" ") } else { words[1..].join(" ") }
+                if words.get(1) == Some(&&"to") {
+                    words[2..].join(" ")
+                } else {
+                    words[1..].join(" ")
+                }
             }
             _ => words[1..].join(" "),
         };
@@ -174,11 +192,14 @@ pub fn execute(reg: &mut LaneRegistry, action: MetaAction) -> String {
                 .join(", ");
             format!("Conversations: {list}.")
         }
-        MetaAction::New(name) => {
-            let lane = reg.create(&name);
-            reg.switch(&lane.id);
-            format!("Created {}. You're in it.", lane.name)
-        }
+        MetaAction::New(name) => match reg.create(&name) {
+            Ok(lane) => {
+                reg.switch(&lane.id);
+                format!("Created {}. You're in it.", lane.name)
+            }
+            Err(LaneCreateError::CapacityReached) => crate::LANE_CAPACITY_ERROR_MESSAGE.into(),
+            Err(_) => "I couldn't create that conversation name. Please use a shorter name.".into(),
+        },
         MetaAction::Brief(lane_opt) => {
             let lane = lane_opt.unwrap_or_else(|| reg.active().clone());
             if lane.id == "telepathy:direct" {
@@ -190,6 +211,31 @@ pub fn execute(reg: &mut LaneRegistry, action: MetaAction) -> String {
                 lane.name, age
             )
         }
-        MetaAction::Unknown => "Meta commands: switch to name, list conversations, new conversation for name, brief.".into(),
+        MetaAction::Unknown => {
+            "Meta commands: switch to name, list conversations, new conversation for name, brief."
+                .into()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn oversized_meta_lane_name_is_spoken_and_does_not_mutate_the_registry() {
+        let mut registry = LaneRegistry::default_direct();
+        let before = registry.clone();
+
+        let reply = execute(
+            &mut registry,
+            MetaAction::New("x".repeat(crate::MAX_LANE_ID_LENGTH)),
+        );
+
+        assert_eq!(
+            reply,
+            "I couldn't create that conversation name. Please use a shorter name."
+        );
+        assert_eq!(registry, before);
     }
 }

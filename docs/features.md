@@ -15,13 +15,13 @@ Each item lists WHY it exists so future-us doesn't have to reverse-engineer inte
 (assistant setting deep-link), see WS connectivity in real time, and get a hint for
 Shokz-app-only steps.
 
-### [M2] Mono operation — INVARIANT HELD (all AudioTrack/TTS paths are CHANNEL_OUT_MONO)
+### [M2] Mono operation — INVARIANT HELD (all local TTS paths are CHANNEL_OUT_MONO)
 **Why:** Either bud works in either ear (Dynamic Ear Detection); one-bud wear is a core
 use case, likely OUR core case (other ear free).
 **Invariant:** All playback mono (CHANNEL_OUT_MONO), no left/right meaning, no stereo cues.
 **Done when:** Invariant holds everywhere audio is played; noted in code.
 
-### [M3] Gesture vocabulary — IMPLEMENTED (MediaSession → stop/repeat/cancel_capture; server honors all three incl. mid-TTS cancel & replay). NOTE: whether buds deliver keys while SCO-active needs hardware test
+### [M3] Gesture vocabulary — IMPLEMENTED (MediaSession → stop/repeat/cancel_capture; server honors all three incl. mid-reply local-TTS cancel & replay). NOTE: whether buds deliver keys while SCO-active needs hardware test
 **Why:** Five distinct physical inputs exist (tap, 2×tap, 3×tap, pinch, pinch-hold);
 muscle memory gets built around whatever we ship first.
 **Mapping (defaults), phase-aware (see ClientCommand.fromMediaKey):**
@@ -43,10 +43,10 @@ never silently.
 **Done when:** Notification reflects real state; failure produces spoken feedback without
 the server.
 
-### [M5] Transcription echo-back — IMPLEMENTED server-side (TELEPATHY_ECHO=on default; verified in test flow: two tts_start events per interaction)
+### [M5] Transcription echo-back — IMPLEMENTED server-side (TELEPATHY_ECHO=on default; verified in test flow: two text agent_end events per interaction)
 **Why:** Input quality (bone-conduction mic + beamforming) should make STT errors rare but
 catastrophic when they happen (silent wrong-agent-action). Echo what was heard before acting.
-**Behavior:** After STT, server sends/speaks "Working on: …" confirmation, then proceeds.
+**Behavior:** After STT, server sends a text "Working on: …" confirmation; Android's LocalAnnouncer speaks it locally, then proceeds.
 Double-tap-stop (M3) is the safety net.
 **Config:** `TELEPATHY_ECHO=on|off` (default on for now).
 **Done when:** Echo sentence is heard before agent reply in normal flow.
@@ -65,5 +65,5 @@ Double-tap-stop (M3) is the safety net.
 
 ### [X1] MultiPoint awareness
 **Why rejected:** It's a "don't break" property, not a feature. We already only activate
-SCO at tts_start, which avoids audio-focus fights in practice. Revisit only if a real
+SCO at capture start, which avoids audio-focus fights in practice. Revisit only if a real
 conflict is observed.

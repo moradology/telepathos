@@ -31,8 +31,11 @@ def main():
         line = line.strip()
         if not line:
             continue
+        request_id = "?"
         try:
             req = json.loads(line)
+            if isinstance(req, dict) and isinstance(req.get("id"), str):
+                request_id = req["id"]
             segments, info = model.transcribe(
                 req["path"],
                 language="en",
@@ -55,7 +58,14 @@ def main():
                 "language": info.language,
             }), flush=True)
         except Exception as e:  # never let one bad request kill the worker
-            print(json.dumps({"id": req.get("id", "?"), "error": str(e)}), flush=True)
+            # The bridge converts this fixed wire error into a handset-safe
+            # ProviderResponseError. Keep the diagnostic locally on stderr.
+            print(
+                f"whisper worker request failed: {type(e).__name__}: {e}",
+                file=sys.stderr,
+                flush=True,
+            )
+            print(json.dumps({"id": request_id, "error": "stt unavailable"}), flush=True)
 
 
 if __name__ == "__main__":

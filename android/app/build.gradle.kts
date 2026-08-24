@@ -35,4 +35,8 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     // WebSocket client
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    testImplementation("junit:junit:4.13.2")
+    // Android's platform JSONObject is a throwing stub in local JVM tests.
+    // This stays off the APK classpath; production continues using android.org.json.
+    testImplementation("org.json:json:20240303")
 }

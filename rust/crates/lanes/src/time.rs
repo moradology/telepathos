@@ -2,9 +2,10 @@
 //! Sufficient for age math; swap for RFC3339 when a UI needs pretty dates.
 
 use std::time::{SystemTime, UNIX_EPOCH};
+use telepathy_proto::MAX_SAFE_SEQUENCE;
 
 pub fn now_iso() -> String {
-    format!("epoch-ms:{}", epoch_ms())
+    format!("epoch-ms:{}", epoch_ms().min(MAX_SAFE_SEQUENCE as u128))
 }
 
 pub fn age_summary(last_active: &str) -> String {

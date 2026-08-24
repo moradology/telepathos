@@ -10,11 +10,18 @@ async fn null_provider_loop_returns_text() {
 
 #[test]
 fn tools_stay_constrained() {
-    // policy: the full surface is exactly these five, forever
+    // policy: the full surface is exactly these six, forever
     let names: Vec<&str> = telepathy_steering::tools().iter().map(|t| t.name).collect();
     assert_eq!(
         names,
-        vec!["list_lanes", "active_lane", "switch_lane", "create_lane", "lane_stats", "search_conversations"]
+        vec![
+            "list_lanes",
+            "active_lane",
+            "switch_lane",
+            "create_lane",
+            "lane_stats",
+            "search_conversations"
+        ]
     );
 }
 
@@ -28,8 +35,12 @@ fn unresolved_names_never_execute() {
 #[test]
 fn switch_and_stats() {
     let mut reg = LaneRegistry::default_direct();
-    reg.create("kerchunk");
-    let out = execute_tool(&mut reg, SteeringTool::SwitchLane, &serde_json::json!({"name": "kirk chunk"}));
+    reg.create("kerchunk").unwrap();
+    let out = execute_tool(
+        &mut reg,
+        SteeringTool::SwitchLane,
+        &serde_json::json!({"name": "kirk chunk"}),
+    );
     assert!(out.contains("now kerchunk"), "{out}");
     let out = execute_tool(&mut reg, SteeringTool::LaneStats, &serde_json::json!({}));
     assert!(out.contains("direct: 0 interactions"));
