@@ -625,7 +625,7 @@ mod tests {
                 "rejected name mutated the registry: {name:?}"
             );
 
-            let reply = execute(&mut registry, MetaAction::New(name.to_owned()));
+            let reply = execute(&mut registry, MetaAction::New(name.to_owned()), std::path::Path::new("/tmp/test-notes.jsonl"));
             assert_eq!(
                 reply,
                 "I couldn't create that conversation name. Please use a shorter name."
@@ -667,7 +667,7 @@ mod tests {
             "capacity rejection must not mutate memory"
         );
         assert_eq!(
-            execute(&mut registry, MetaAction::New("one too many".into())),
+            execute(&mut registry, MetaAction::New("one too many".into()), std::path::Path::new("/tmp/test-notes.jsonl")),
             LANE_CAPACITY_ERROR_MESSAGE
         );
         assert_eq!(

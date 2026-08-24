@@ -261,6 +261,7 @@ mod tests {
         let reply = execute(
             &mut registry,
             MetaAction::New("x".repeat(crate::MAX_LANE_ID_LENGTH)),
+            std::path::Path::new("/tmp/test-notes.jsonl"),
         );
 
         assert_eq!(
