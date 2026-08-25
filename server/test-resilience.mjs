@@ -4,10 +4,16 @@ import WebSocket from "ws";
 import { results, check } from "./check.mjs";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+function sendHello(socket) {
+  socket.send(JSON.stringify({ type: "hello", device: "test", installation_id: "test-inst" }));
+}
+
+
 async function test1_normalFlow() {
   const ws = new WebSocket("ws://localhost:8787");
   const events = [];
   await new Promise((res, rej) => { ws.on("open", res); ws.on("error", rej); });
+  ws.send(JSON.stringify({ type: "hello", device: "test", installation_id: "test-inst" }));
   ws.on("message", (data) => {
     const m = JSON.parse(data.toString());
     events.push(m.type);

@@ -4,7 +4,7 @@ import { readFileSync, appendFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
 import { config } from "./config.js";
-import { EnergyVad } from "./vad.js";
+import { VAD_INITIAL, VadState, vadStep, type VadConfig } from "./vad.js";
 import { transcribe, Transcript } from "./transcriber.js";
 import { ProviderResponseError } from "./provider-response.js";
 import {
@@ -189,8 +189,14 @@ function durationFromEnvironment(name: string, fallback: number): number {
   return value;
 }
 
+const vadCfg: VadConfig = {
+  threshold: config.vadThreshold,
+  silenceMsToEnd: config.vadSilenceMs,
+  minSpeechMs: config.vadMinSpeechMs,
+};
+
 interface ClientState {
-  vad: EnergyVad;
+  vad: VadState;
   utterance: Buffer[];
   utteranceBytes: number;
   preroll: Buffer[];      // rolling window kept so utterance starts aren't clipped
@@ -426,7 +432,7 @@ function startBridgeServer(): void {
 
   wss.on("connection", (ws) => {
   const state: ClientState = {
-    vad: new EnergyVad(config.vadThreshold, config.vadSilenceMs, config.vadMinSpeechMs),
+    vad: VAD_INITIAL,
     utterance: [],
     utteranceBytes: 0,
     preroll: [],
@@ -509,7 +515,7 @@ function startBridgeServer(): void {
     state.utteranceBytes = 0;
     state.preroll = [];
     state.prerollBytes = 0;
-    state.vad.reset();
+    state.vad = VAD_INITIAL;
   });
   ws.on("error", (e) => console.error("ws error:", e.message));
   });
@@ -599,7 +605,9 @@ function onAudio(ws: WebSocket, state: ClientState, pcm: Buffer) {
     while (state.prerollBytes - state.preroll[0].length > PREROLL_BYTES) {
       state.prerollBytes -= state.preroll.shift()!.length;
     }
-    if (state.vad.process(pcm) === "start") {
+    const stepped = vadStep(state.vad, pcm, vadCfg);
+    state.vad = stepped.state;
+    if (stepped.event === "start") {
       const preroll = [...state.preroll];
       const bytes = state.prerollBytes;
       state.preroll = [];
@@ -618,12 +626,14 @@ function onAudio(ws: WebSocket, state: ClientState, pcm: Buffer) {
 
   // hard cap: force-end pathological/never-ending input instead of growing forever
   const forced = state.utteranceBytes >= MAX_UTTERANCE_BYTES;
-  const ended = state.vad.process(pcm) === "end";
+  const stepped = vadStep(state.vad, pcm, vadCfg);
+  state.vad = stepped.state;
+  const ended = stepped.event === "end";
 
   if (ended || forced) {
     if (forced) {
       console.warn("utterance hit 60s cap — forcing end");
-      state.vad.reset(); // otherwise VAD stays "speaking" and eats the next utterance
+      state.vad = VAD_INITIAL; // otherwise VAD stays "speaking" and eats the next utterance
       step(ws, state, { kind: "FORCE_END" });
     } else {
       step(ws, state, { kind: "UTTERANCE_END" });
@@ -1660,7 +1670,7 @@ function resetUnstartedCapturePreparation(
   state.utteranceBytes = 0;
   state.preroll = [];
   state.prerollBytes = 0;
-  state.vad.reset();
+  state.vad = VAD_INITIAL;
   send(ws, { type: "error", message: "capture preparation timed out" });
   send(ws, { type: "listening" });
 }
@@ -1791,7 +1801,7 @@ async function validateLaneSnapshot(
     state.utteranceBytes = 0;
     state.preroll = [];
     state.prerollBytes = 0;
-    state.vad.reset();
+    state.vad = VAD_INITIAL;
     const message = phoneSafeErrorMessage(error);
     if (message === "lane snapshot required") {
       send(ws, { type: "error", message });
@@ -1854,7 +1864,7 @@ function onControl(ws: WebSocket, state: ClientState, raw: string) {
           state.utteranceBytes = 0;
           state.preroll = [];
           state.prerollBytes = 0;
-          state.vad.reset();
+          state.vad = VAD_INITIAL;
           if (state.fsm.phase === "capturing") {
             state.cancelRequested = true;
             state.activeInteractionId = null;
@@ -1897,7 +1907,7 @@ function onControl(ws: WebSocket, state: ClientState, raw: string) {
           state.utteranceBytes = 0;
           state.preroll = [];
           state.prerollBytes = 0;
-          state.vad.reset();
+          state.vad = VAD_INITIAL;
           if (state.fsm.phase === "capturing") {
             step(ws, state, { kind: "CANCEL" });
           } else if (state.fsm.phase === "processing") {
@@ -1928,7 +1938,7 @@ function onControl(ws: WebSocket, state: ClientState, raw: string) {
     case "utterance_end": {
       // explicit "send now" (tap while capturing) — beats waiting for VAD silence
       if (state.fsm.phase === "capturing" && state.captureTurnToken === msg.turnToken) {
-        state.vad.reset();
+        state.vad = VAD_INITIAL;
         step(ws, state, { kind: "UTTERANCE_END" });
         void handleUtterance(ws, state);
       }
@@ -1968,7 +1978,7 @@ function onControl(ws: WebSocket, state: ClientState, raw: string) {
         state.utteranceBytes = 0;
         state.preroll = [];
         state.prerollBytes = 0;
-        state.vad.reset();
+        state.vad = VAD_INITIAL;
         state.captureLaneId = msg.id;
         state.captureLaneRevision = msg.revision ?? null;
         state.captureTurnToken = msg.turnToken;
