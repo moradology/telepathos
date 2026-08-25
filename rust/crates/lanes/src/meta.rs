@@ -91,6 +91,35 @@ pub fn parse_meta(raw: &str, reg: &LaneRegistry) -> MetaAction {
         return MetaAction::Unknown;
     }
 
+    // note that X / remember that X — memory capture, never a task.
+    // Content preserves the RAW transcript casing (notes are memory; case matters).
+    let raw_trim = raw.trim();
+    let raw_folded = raw_trim.to_lowercase();
+    let raw_words: Vec<&str> = raw_folded.split(' ').collect();
+    if matches!(raw_words.first(), Some(&"note") | Some(&"remember") | Some(&"keep"))
+        && raw_words.len() > 1
+    {
+        fn strip_ci<'a>(raw: &'a str, prefix: &str) -> Option<&'a str> {
+            if raw.len() >= prefix.len()
+                && raw[..prefix.len()].eq_ignore_ascii_case(prefix)
+            {
+                Some(raw[prefix.len()..].trim_start())
+            } else {
+                None
+            }
+        }
+        let content = strip_ci(raw_trim, "keep in mind that ")
+            .or_else(|| strip_ci(raw_trim, "remember that "))
+            .or_else(|| strip_ci(raw_trim, "note that "))
+            .or_else(|| strip_ci(raw_trim, "remember "))
+            .or_else(|| strip_ci(raw_trim, "note "))
+            .or_else(|| strip_ci(raw_trim, "keep "));
+        return match content {
+            Some(c) if !c.trim().is_empty() => MetaAction::Note(c.trim().to_string()),
+            _ => MetaAction::Unknown, // dangling prefix, no content
+        };
+    }
+
     // list conversations
     if (text.starts_with("list")
         || text.starts_with("show")

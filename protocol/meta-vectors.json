@@ -1,0 +1,75 @@
+{
+  "comment": "Meta-plane classification vectors: Node parseMeta and Rust parse_meta must agree.",
+  "cases": [
+    {
+      "transcript": "switch to kerchunk",
+      "op": "switch",
+      "lane": "kerchunk"
+    },
+    {
+      "transcript": "switch to kirk chunk",
+      "op": "switch",
+      "lane": "kerchunk"
+    },
+    {
+      "transcript": "go to direct",
+      "op": "switch",
+      "lane": "direct"
+    },
+    {
+      "transcript": "list conversations",
+      "op": "list"
+    },
+    {
+      "transcript": "new conversation for geospatial migration",
+      "op": "new",
+      "name": "geospatial migration"
+    },
+    {
+      "transcript": "brief me",
+      "op": "brief"
+    },
+    {
+      "transcript": "brief on kerchunk",
+      "op": "brief",
+      "lane": "kerchunk"
+    },
+    {
+      "transcript": "note that the deploy key lives in vault",
+      "op": "note",
+      "text": "the deploy key lives in vault"
+    },
+    {
+      "transcript": "remember I prefer short answers",
+      "op": "note",
+      "text": "I prefer short answers"
+    },
+    {
+      "transcript": "keep in mind that the port changed",
+      "op": "note",
+      "text": "the port changed"
+    },
+    {
+      "transcript": "fork into the migration",
+      "op": "fork",
+      "name": "the migration"
+    },
+    {
+      "transcript": "fork",
+      "op": "fork",
+      "name": null
+    },
+    {
+      "transcript": "switch to main",
+      "op": "unknown"
+    },
+    {
+      "transcript": "why do the tests fail on tuesdays",
+      "op": "unknown"
+    },
+    {
+      "transcript": "",
+      "op": "unknown"
+    }
+  ]
+}

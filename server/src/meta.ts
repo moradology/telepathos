@@ -74,11 +74,12 @@ export function parseMeta(rawTranscript: string, reg: LaneRegistry): MetaAction 
   if (!text) return { op: "unknown" };
   const words = text.split(" ");
 
-  // note that X / remember that X — memory capture, never a task
+  // note that X / remember that X — memory capture, never a task.
+  // Content preserves the RAW transcript casing (notes are memory; case matters).
   if (words.length > 1 && ["note", "remember", "keep"].includes(words[0])) {
-    let rest = words.slice(1).join(" ");
-    rest = rest.replace(/^(that|in mind that) /, "").trim();
-    if (rest) return { op: "note", text: rest };
+    const raw = rawTranscript.trim().replace(/\s+/g, " ");
+    const m = raw.match(/^(?:note|remember|keep)(?:\s+in\s+mind)?\s+(?:that\s+)?(.+)$/i);
+    if (m && m[1].trim()) return { op: "note", text: m[1].trim() };
     return { op: "unknown" };
   }
 
