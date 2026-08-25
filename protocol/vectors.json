@@ -1,0 +1,137 @@
+{
+  "comment": "Canonical protocol test vectors. Every implementation (server/src/protocol.ts, rust/crates/proto, android Protocol.kt) must classify these identically. Adding a frame variant = adding vectors here + updating each parser (compilers enforce the rest).",
+  "control": {
+    "valid": [
+      {
+        "frame": "{\"type\":\"hello\",\"device\":\"pixel\",\"installation_id\":\"inst-1\"}",
+        "tag": "hello"
+      },
+      {
+        "frame": "{\"type\":\"hello\",\"device\":\"pixel\",\"installation_id\":\"inst-1\",\"token\":\"t\"}",
+        "tag": "hello"
+      },
+      {
+        "frame": "{\"type\":\"command\",\"command\":\"stop\",\"turn_token\":\"t1\"}",
+        "tag": "command"
+      },
+      {
+        "frame": "{\"type\":\"command\",\"command\":\"repeat\",\"turn_token\":\"t1\"}",
+        "tag": "command"
+      },
+      {
+        "frame": "{\"type\":\"command\",\"command\":\"cancel_capture\",\"turn_token\":\"t1\"}",
+        "tag": "command"
+      },
+      {
+        "frame": "{\"type\":\"utterance_end\",\"turn_token\":\"t1\"}",
+        "tag": "utterance_end"
+      },
+      {
+        "frame": "{\"type\":\"meta_mode\",\"turn_token\":\"t1\"}",
+        "tag": "meta_mode"
+      },
+      {
+        "frame": "{\"type\":\"lane\",\"id\":\"telepathy:direct\",\"turn_token\":\"t1\"}",
+        "tag": "lane"
+      },
+      {
+        "frame": "{\"type\":\"lane\",\"id\":\"telepathy:direct\",\"turn_token\":\"t1\",\"revision\":7}",
+        "tag": "lane"
+      },
+      {
+        "frame": "{\"type\":\"reply_received\",\"lane_id\":\"telepathy:direct\",\"reply_to\":\"r-1\",\"after_seq\":1,\"through_seq\":2,\"turn_token\":\"t1\",\"interaction_id\":\"i-1\"}",
+        "tag": "reply_received"
+      },
+      {
+        "frame": "{\"type\":\"reply_ack\",\"lane_id\":\"telepathy:direct\",\"reply_to\":\"r-1\",\"after_seq\":1,\"through_seq\":2,\"turn_token\":\"t1\",\"interaction_id\":\"i-1\"}",
+        "tag": "reply_ack"
+      },
+      {
+        "frame": "{\"type\":\"reply_ack_retire\",\"lane_id\":\"telepathy:direct\",\"reply_to\":\"r-1\",\"after_seq\":1,\"through_seq\":2,\"turn_token\":\"t1\",\"interaction_id\":\"i-1\"}",
+        "tag": "reply_ack_retire"
+      },
+      {
+        "frame": "{\"type\":\"lane\",\"id\":\"TELEPATHY:DIRECT\",\"turn_token\":\"t1\"}",
+        "tag": "lane"
+      },
+      {
+        "frame": "{\"type\":\"lane\",\"id\":\"telepathy::direct\",\"turn_token\":\"t1\"}",
+        "tag": "lane"
+      }
+    ],
+    "invalid": [
+      "{\"type\":\"hello\",\"device\":\"pixel\"}",
+      "{\"type\":\"hello\",\"device\":\"pixel\",\"installation_id\":\" \" }",
+      "{\"type\":\"hello\",\"device\":\"pixel\",\"installation_id\":\"\"}",
+      "{\"type\":\"hello\",\"installation_id\":\"inst-1\"}",
+      "{\"type\":\"command\",\"command\":\"approve\",\"turn_token\":\"t1\"}",
+      "{\"type\":\"command\",\"command\":\"stop\"}",
+      "{\"type\":\"command\",\"command\":\"stop\",\"turn_token\":\"\"}",
+      "{\"type\":\"utterance_end\"}",
+      "{\"type\":\"meta_mode\"}",
+      "{\"type\":\"lane\",\"id\":\"-telepathy\",\"turn_token\":\"t1\"}",
+      "{\"type\":\"lane\",\"turn_token\":\"t1\"}",
+      "{\"type\":\"reply_received\",\"lane_id\":\"telepathy:direct\",\"reply_to\":\"r-1\",\"after_seq\":2,\"through_seq\":2,\"turn_token\":\"t1\",\"interaction_id\":\"i-1\"}",
+      "{\"type\":\"reply_received\",\"lane_id\":\"telepathy:direct\",\"reply_to\":\"r-1\",\"after_seq\":1,\"turn_token\":\"t1\",\"interaction_id\":\"i-1\"}",
+      "{\"type\":\"reply_ack\",\"lane_id\":\"telepathy:direct\",\"reply_to\":\"r-1\",\"after_seq\":1,\"through_seq\":2,\"turn_token\":\"t1\"}",
+      "{\"type\":\"approve\"}",
+      "{\"type\":\"unknown_weird\"}",
+      "[]",
+      "\"hello\"",
+      "not json{{{"
+    ]
+  },
+  "server": {
+    "valid": [
+      {
+        "frame": "{\"type\":\"ready\"}",
+        "type": "ready"
+      },
+      {
+        "frame": "{\"type\":\"speech_start\"}",
+        "type": "speech_start"
+      },
+      {
+        "frame": "{\"type\":\"utterance\",\"samples\":5}",
+        "type": "utterance"
+      },
+      {
+        "frame": "{\"type\":\"stt\",\"text\":\"hi\",\"turn_token\":\"t1\",\"interaction_id\":\"i-1\"}",
+        "type": "stt"
+      },
+      {
+        "frame": "{\"type\":\"stt\",\"text\":\"hi\",\"confidence\":0.83,\"repo\":\"kerchunk\",\"turn_token\":\"t1\",\"interaction_id\":\"i-1\"}",
+        "type": "stt"
+      },
+      {
+        "frame": "{\"type\":\"agent_delta\",\"text\":\"working\",\"turn_token\":\"t1\",\"interaction_id\":\"i-1\"}",
+        "type": "agent_delta"
+      },
+      {
+        "frame": "{\"type\":\"agent_end\",\"text\":\"done\",\"turn_token\":\"t1\",\"interaction_id\":\"i-1\"}",
+        "type": "agent_end"
+      },
+      {
+        "frame": "{\"type\":\"listening\"}",
+        "type": "listening"
+      },
+      {
+        "frame": "{\"type\":\"phase\",\"value\":\"capturing\"}",
+        "type": "phase"
+      },
+      {
+        "frame": "{\"type\":\"incoming\",\"lane\":\"kerchunk\",\"text\":\"deploy finished\"}",
+        "type": "incoming"
+      },
+      {
+        "frame": "{\"type\":\"error\",\"message\":\"boom\"}",
+        "type": "error"
+      }
+    ],
+    "invalid": [
+      "{\"type\":\"unknown_weird\"}",
+      "[]",
+      "not json"
+    ]
+  }
+}

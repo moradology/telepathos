@@ -373,6 +373,12 @@ sealed interface ServerMsg {
                             ?: return@runCatching null
                         Phase(phase)
                     }
+                    "incoming" -> {
+                        val lane = requiredBoundedText(o, "lane", MAX_LANE_ID_LENGTH, allowEmpty = false)
+                            ?.takeIf(::isValidLaneId) ?: return@runCatching null
+                        val text = requiredBoundedText(o, "text", MAX_REPLY_TEXT_BYTES) ?: return@runCatching null
+                        Incoming(lane, text)
+                    }
                     "ready" -> Ready
                     "listening" -> Listening
                     "agent_end" -> {
