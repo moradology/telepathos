@@ -92,25 +92,31 @@ object LaneStore {
         }
     }
 
-    /** Switch to a lane by id; announces via the event log. */
-    fun switch(ctx: Context, laneId: String): Boolean {
-        val base = baseUrl(ctx) ?: return false
-        val json = laneSwitchRequestJson(laneId) ?: return false
+    sealed interface SwitchResult {
+        data object Ok : SwitchResult
+        data class Failed(val reason: String) : SwitchResult
+    }
+
+    /** Switch to a lane by id. Failure carries the truthful cause. */
+    fun switch(ctx: Context, laneId: String): SwitchResult {
+        val base = baseUrl(ctx)
+            ?: return SwitchResult.Failed("no telepathyd URL configured")
+        val json = laneSwitchRequestJson(laneId)
+            ?: return SwitchResult.Failed("invalid lane id")
         val body = json.toRequestBody("application/json".toMediaTypeOrNull())
         return try {
             val response = client.newCall(
                 request(ctx, "$base/api/lanes/active").post(body).build()
             ).execute()
             if (!response.isSuccessful) {
-                response.close()
-                return false
+                return SwitchResult.Failed("HTTP ${response.code}")
             }
             val o = BoundedHttpResponse.readJsonObject(response, HttpResponseLimits.LANE_MUTATION_BYTES)
-                ?: return false
-            o.optBoolean("ok", false)
+                ?: return SwitchResult.Failed("malformed response")
+            if (o.optBoolean("ok", false)) SwitchResult.Ok
+            else SwitchResult.Failed("bridge rejected switch")
         } catch (e: Exception) {
-            Log.w("Telepathy", "lane switch unavailable: ${e.message}")
-            false
+            SwitchResult.Failed(e.message ?: "unreachable")
         }
     }
 
@@ -128,10 +134,11 @@ object LaneStore {
             if (lanes.isEmpty()) return@Thread
             val idx = lanes.indexOfFirst { it.active }.coerceAtLeast(0)
             val next = lanes[(idx + 1) % lanes.size]
-            if (switch(ctx, next.id)) {
-                TriggerLog.record(ctx, "→ ${next.name} (${lanes.size} lanes)")
-            } else {
-                Log.w("Telepathy", "cycle switch failed")
+            when (val r = switch(ctx, next.id)) {
+                is SwitchResult.Ok ->
+                    TriggerLog.record(ctx, "→ ${next.name} (${lanes.size} lanes)")
+                is SwitchResult.Failed ->
+                    Log.w("Telepathy", "cycle switch failed: ${r.reason}")
             }
         }.start()
     }
