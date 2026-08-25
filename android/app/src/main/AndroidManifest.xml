@@ -39,6 +39,10 @@
             android:permission="android.permission.BIND_VOICE_INTERACTION">
             <intent-filter>
                 <action android:name="android.service.voice.VoiceInteractionService" />
+                <!-- Role qualification (AssistantRoleBehavior) resolves this
+                     filter with CATEGORY_DEFAULT; omitting it makes the app
+                     "unqualified" as a default-assistant candidate. -->
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
             <meta-data
                 android:name="android.service.voice"
