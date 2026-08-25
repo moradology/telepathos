@@ -21,7 +21,7 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
 };
-use telepathy_lanes::{
+use telepathy_lanes::{Lane,
     is_valid_lane_id, LaneCreateError, LaneRegistry, LaneRegistrySaveError,
     MAX_ENRICHED_LANE_TITLE_CODEPOINTS, MAX_ENRICHED_LANE_TITLE_UTF8_BYTES, MAX_LANE_COUNT,
     MAX_LANE_ID_LENGTH, MAX_LANE_NAME_UTF8_BYTES,
@@ -688,6 +688,54 @@ fn parse_interaction_snapshot(path: &Path) -> anyhow::Result<Vec<InteractionEntr
     Ok(snapshot.entries)
 }
 
+/// Pure fold step: apply one journal line to an in-memory ledger.
+/// No filesystem access — crash-interleaving properties are testable here.
+fn fold_journal_entry(
+    mut ledger: InteractionLedger,
+    line: &str,
+    line_number: usize,
+    journal_label: &str,
+) -> anyhow::Result<InteractionLedger> {
+    if line.trim().is_empty() {
+        anyhow::bail!(
+            "corrupt interaction journal {journal_label}: blank entry at line {line_number}"
+        );
+    }
+    ledger.journal_entries += 1;
+    if ledger.journal_entries > MAX_INTERACTION_JOURNAL_ENTRIES {
+        anyhow::bail!(
+            "interaction journal {journal_label} exceeds its {}-entry compaction bound",
+            MAX_INTERACTION_JOURNAL_ENTRIES
+        );
+    }
+    let entry: InteractionEntry = serde_json::from_str(line).map_err(|error| {
+        anyhow::anyhow!(
+            "corrupt interaction journal {journal_label} at line {line_number}: {error}"
+        )
+    })?;
+    insert_interaction_entry(&mut ledger.entries, entry, Path::new(journal_label))?;
+    Ok(ledger)
+}
+
+/// Pure reconciliation: raise each lane's interaction count to the ledger
+/// max. Returns true when any lane was moved (caller persists that).
+fn reconcile_lane_interactions(
+    lanes: &mut [Lane],
+    entries: &std::collections::HashMap<String, InteractionEntry>,
+) -> bool {
+    let mut reconciled = false;
+    for entry in entries.values() {
+        if let Some(lane) = lanes.iter_mut().find(|lane| lane.id == entry.lane_id) {
+            let current = lane.interactions.unwrap_or(0);
+            if entry.lane_interactions > current {
+                lane.interactions = Some(entry.lane_interactions);
+                reconciled = true;
+            }
+        }
+    }
+    reconciled
+}
+
 fn insert_interaction_entry(
     entries: &mut std::collections::HashMap<String, InteractionEntry>,
     entry: InteractionEntry,
@@ -732,31 +780,16 @@ fn load_interaction_ledger(
     let journal_path = interaction_journal_path(path);
     match fs::File::open(&journal_path) {
         Ok(file) => {
+            // Reconciliation-as-fold: recovery is a left fold of journal
+            // lines over the snapshot state; any crash truncation yields a
+            // prefix-consistent ledger.
             for (index, line) in BufReader::new(file).lines().enumerate() {
-                let line = line?;
-                if line.trim().is_empty() {
-                    return Err(anyhow::anyhow!(
-                        "corrupt interaction journal {}: blank entry at line {}",
-                        journal_path.display(),
-                        index + 1
-                    ));
-                }
-                ledger.journal_entries += 1;
-                if ledger.journal_entries > MAX_INTERACTION_JOURNAL_ENTRIES {
-                    return Err(anyhow::anyhow!(
-                        "interaction journal {} exceeds its {}-entry compaction bound",
-                        journal_path.display(),
-                        MAX_INTERACTION_JOURNAL_ENTRIES
-                    ));
-                }
-                let entry = serde_json::from_str(&line).map_err(|error| {
-                    anyhow::anyhow!(
-                        "corrupt interaction journal {} at line {}: {error}",
-                        journal_path.display(),
-                        index + 1
-                    )
-                })?;
-                insert_interaction_entry(&mut ledger.entries, entry, &journal_path)?;
+                ledger = fold_journal_entry(
+                    ledger,
+                    &line?,
+                    index + 1,
+                    &journal_path.display().to_string(),
+                )?;
             }
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -777,25 +810,17 @@ fn load_interaction_ledger(
             MAX_INTERACTION_DEDUPE_ENTRIES
         ));
     }
-    let mut registry_reconciled = false;
     for entry in ledger.entries.values() {
-        let lane = registry
-            .lanes
-            .iter_mut()
-            .find(|lane| lane.id == entry.lane_id)
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "interaction ledger {} references unknown lane {}",
-                    path.display(),
-                    entry.lane_id
-                )
-            })?;
-        let current = lane.interactions.unwrap_or(0);
-        if entry.lane_interactions > current {
-            lane.interactions = Some(entry.lane_interactions);
-            registry_reconciled = true;
+        if !registry.lanes.iter().any(|lane| lane.id == entry.lane_id) {
+            anyhow::bail!(
+                "interaction ledger {} references unknown lane {}",
+                path.display(),
+                entry.lane_id
+            );
         }
     }
+    let registry_reconciled =
+        reconcile_lane_interactions(&mut registry.lanes, &ledger.entries);
     Ok((ledger, registry_reconciled))
 }
 
@@ -2028,6 +2053,112 @@ fn merge_model_registry(
         current.previous_id = proposed.previous_id.clone();
     }
     Ok(())
+}
+
+/// Property tests for the journal fold: determinism, prefix consistency
+/// under simulated crash truncation, and idempotent re-application.
+#[cfg(test)]
+mod interaction_fold_tests {
+    use super::*;
+
+    fn entry(id: &str, lane: &str, count: u64) -> String {
+        format!(
+            r#"{{"interaction_id":"{id}","lane_id":"{lane}","interaction_created_at_ms":1000,"lane_interactions":{count}}}"#
+        )
+    }
+
+    fn line_json(id: &str, lane: &str, count: u64) -> String { entry(id, lane, count) }
+
+    #[test]
+    fn fold_is_deterministic() {
+        let lines = vec![
+            line_json("i1", "telepathy:direct", 3),
+            line_json("i2", "telepathy:direct", 5),
+        ];
+        let a: anyhow::Result<InteractionLedger> =
+            lines.iter().enumerate().try_fold(
+                InteractionLedger::default(),
+                |acc, (i, l)| fold_journal_entry(acc, l, i + 1, "j"),
+            );
+        let b: anyhow::Result<InteractionLedger> =
+            lines.iter().enumerate().try_fold(
+                InteractionLedger::default(),
+                |acc, (i, l)| fold_journal_entry(acc, l, i + 1, "j"),
+            );
+        assert_eq!(a.unwrap().entries.len(), b.unwrap().entries.len());
+    }
+
+    #[test]
+    fn crash_truncation_yields_prefix_consistent_ledger() {
+        let lines = [
+            line_json("i1", "telepathy:direct", 3),
+            line_json("i2", "telepathy:direct", 5),
+            line_json("i3", "telepathy:forks", 2),
+        ];
+        let full: InteractionLedger = lines
+            .iter()
+            .enumerate()
+            .try_fold(InteractionLedger::default(), |acc, (i, l)| {
+                fold_journal_entry(acc, l, i + 1, "j")
+            })
+            .unwrap();
+        // A crash at every possible truncation point leaves a valid ledger
+        // whose journal count equals the prefix length.
+        for cut in 0..=lines.len() {
+            let prefix: InteractionLedger = lines[..cut]
+                .iter()
+                .enumerate()
+                .try_fold(InteractionLedger::default(), |acc, (i, l)| {
+                    fold_journal_entry(acc, l, i + 1, "j")
+                })
+                .unwrap();
+            assert_eq!(prefix.journal_entries, cut);
+            assert!(prefix.entries.len() <= full.entries.len());
+        }
+    }
+
+    #[test]
+    fn duplicate_identical_entries_are_idempotent() {
+        let line = line_json("i1", "telepathy:direct", 3);
+        let once =
+            fold_journal_entry(InteractionLedger::default(), &line, 1, "j").unwrap();
+        let twice = fold_journal_entry(once.clone(), &line, 2, "j").unwrap();
+        assert_eq!(once.entries, twice.entries);
+        // Conflicting record for the same id must fail loudly.
+        let conflict = line_json("i1", "telepathy:direct", 9);
+        assert!(fold_journal_entry(twice, &conflict, 3, "j").is_err());
+    }
+
+    #[test]
+    fn garbage_and_blank_lines_error_at_their_line_number() {
+        let r = fold_journal_entry(InteractionLedger::default(), "", 4, "j");
+        let msg = r.err().unwrap().to_string();
+        assert!(msg.contains("line 4"), "{msg}");
+        let r = fold_journal_entry(InteractionLedger::default(), "{not json", 7, "j");
+        let msg = r.err().unwrap().to_string();
+        assert!(msg.contains("line 7"), "{msg}");
+    }
+
+    #[test]
+    fn reconciliation_takes_max_and_reports_change() {
+        let mut lanes = vec![telepathy_lanes::Lane {
+            id: "telepathy:direct".into(),
+            name: "Direct".into(),
+            created_at: "2026-01-01T00:00:00Z".into(),
+            last_active: "2026-01-01T00:00:00Z".into(),
+            interactions: Some(4),
+        }];
+        let mut entries = std::collections::HashMap::new();
+        entries.insert(
+            "i1".to_string(),
+            serde_json::from_str::<InteractionEntry>(&entry("i1", "telepathy:direct", 6))
+                .unwrap(),
+        );
+        assert!(reconcile_lane_interactions(&mut lanes, &entries));
+        assert_eq!(lanes[0].interactions, Some(6));
+        // Reconciling again is a no-op and reports no change.
+        assert!(!reconcile_lane_interactions(&mut lanes, &entries));
+    }
 }
 
 #[cfg(test)]

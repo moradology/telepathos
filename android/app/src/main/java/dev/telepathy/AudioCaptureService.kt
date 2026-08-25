@@ -1094,7 +1094,9 @@ class AudioCaptureService : Service() {
             Thread {
                 val batch = runCatching { fetchPendingItems(pendingContext) }
                     .onFailure { Log.w(TAG, "pending worker: ${it.message}") }
-                    .getOrDefault(PendingBatch.empty(pendingContext))
+                    .getOrDefault(
+                        PendingFetchResult.Failed("pending worker crashed", pendingContext)
+                    )
                 mainHandler.post {
                     speakPendingThenOpen(socket, generation, batch)
                 }
@@ -1103,9 +1105,17 @@ class AudioCaptureService : Service() {
             // Meta skips pending narration, but it still needs the same lane
             // snapshot as a normal capture so its interaction stats are exact.
             Thread {
-                val batch = runCatching { fetchPendingItems(pendingContext) }
+                val batch = when (val r = runCatching { fetchPendingItems(pendingContext) }
                     .onFailure { Log.w(TAG, "meta lane worker: ${it.message}") }
-                    .getOrDefault(PendingBatch.empty(pendingContext))
+                    .getOrDefault(
+                        PendingFetchResult.Failed("pending worker crashed", pendingContext)
+                    )) {
+                    is PendingFetchResult.Ok -> r.batch
+                    is PendingFetchResult.Failed -> {
+                        Log.w(TAG, "meta lane fetch failed: ${r.reason}")
+                        PendingFetchResult.fallback(r)
+                    }
+                }
                 // Meta entry: templated lane status + the timestamped inbox —
                 // "which lane am I in" and "what did I miss" answered at entry.
                 // Consumed after being heard (receipt-aware per-row ack).
@@ -1151,8 +1161,15 @@ class AudioCaptureService : Service() {
     private fun speakPendingThenOpen(
         socket: WebSocket,
         generation: Long,
-        fetched: PendingBatch,
+        fetchResult: PendingFetchResult,
     ) {
+        val fetched = when (val r = fetchResult) {
+            is PendingFetchResult.Ok -> r.batch
+            is PendingFetchResult.Failed -> {
+                Log.w(TAG, "pending fetch unavailable: ${r.reason}")
+                PendingFetchResult.fallback(r)
+            }
+        }
         if (!preparation.isCurrent(socket, generation) ||
             !captureRequested || mic.isOpen || ws !== socket) {
             preparation.finish(socket, generation)
@@ -1245,10 +1262,18 @@ class AudioCaptureService : Service() {
     ) {
         Thread {
             val configured = LaneStore.isConfigured(this)
-            val current = if (configured) {
-                runCatching { fetchPendingItems(original.context) }
+            val current: PendingBatch? = if (configured) {
+                when (val r = runCatching { fetchPendingItems(original.context) }
                     .onFailure { Log.w(TAG, "lane validation worker: ${it.message}") }
-                    .getOrNull()
+                    .getOrNull()) {
+                    null -> null
+                    is PendingFetchResult.Ok -> r.batch
+                    is PendingFetchResult.Failed -> {
+                        // Truthful cause logged; caller treats as unavailable.
+                        Log.w(TAG, "lane revalidation failed: ${r.reason}")
+                        null
+                    }
+                }
             } else {
                 original
             }
@@ -1390,10 +1415,21 @@ class AudioCaptureService : Service() {
         val items: List<PendingItem>,
         val revision: Long?,
         val context: PendingConsumeContext,
-    ) {
+    )
+
+    /**
+     * Fetch outcome: a real batch, or the truthful reason there isn't one.
+     * Previously every failure collapsed into an indistinguishable empty
+     * batch — indistinguishable from a genuinely empty inbox.
+     */
+    private sealed interface PendingFetchResult {
+        data class Ok(val batch: PendingBatch) : PendingFetchResult
+        data class Failed(val reason: String, val context: PendingConsumeContext) :
+            PendingFetchResult
+
         companion object {
-            fun empty(context: PendingConsumeContext) =
-                PendingBatch(null, emptyList(), null, context)
+            /** Degenerate batch for paths that must proceed despite failure. */
+            fun fallback(r: Failed) = PendingBatch(null, emptyList(), null, r.context)
         }
     }
 
@@ -1469,19 +1505,19 @@ class AudioCaptureService : Service() {
     }
 
     /** Fetch pending items for the active lane (oldest first). */
-    private fun fetchPendingItems(context: PendingConsumeContext): PendingBatch {
-        val hermes = context.apiBaseUrl ?: return PendingBatch.empty(context)
+    private fun fetchPendingItems(context: PendingConsumeContext): PendingFetchResult {
+        val hermes = context.apiBaseUrl
+            ?: return PendingFetchResult.Failed("no telepathyd URL configured", context)
         return try {
             val request = Request.Builder().url("$hermes/api/pending").apply {
                 context.token?.let { header("x-telepathy-token", it) }
             }.build()
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
-                response.close()
-                return PendingBatch.empty(context)
+                return PendingFetchResult.Failed("HTTP ${response.code}", context)
             }
             val body = BoundedHttpResponse.readJsonObject(response, HttpResponseLimits.PENDING_BYTES)
-                ?: return PendingBatch.empty(context)
+                ?: return PendingFetchResult.Failed("malformed response body", context)
             val laneId = body.optString("lane_id").takeIf(::isValidLaneId)
             val hasRevision = body.has("revision")
             val revision = if (hasRevision) parseSafeSequence(body.opt("revision")) else null
@@ -1490,13 +1526,14 @@ class AudioCaptureService : Service() {
                 // JSON-safe revision. Do not let optLong round an unsafe
                 // value into a lane snapshot that the bridge cannot
                 // validate consistently.
-                return PendingBatch.empty(context)
+                return PendingFetchResult.Failed("unsafe revision value", context)
             }
             val arr = body.optJSONArray("items")
-                ?: return PendingBatch(laneId, emptyList(), revision, context)
+                ?: return PendingFetchResult.Ok(PendingBatch(laneId, emptyList(), revision, context))
             val records = ArrayList<PendingItemRecord>(arr.length())
             for (i in 0 until arr.length()) {
-                val item = arr.optJSONObject(i) ?: return PendingBatch.empty(context)
+                val item = arr.optJSONObject(i)
+                    ?: return PendingFetchResult.Failed("malformed item at index $i", context)
                 records += PendingItemRecord(
                     sequence = item.opt("seq"),
                     content = item.opt("content"),
@@ -1504,11 +1541,11 @@ class AudioCaptureService : Service() {
                 )
             }
             val parsed = PendingItemsParser.parse(records)
-                ?: return PendingBatch.empty(context)
-            PendingBatch(laneId, parsed.items, revision, context)
+                ?: return PendingFetchResult.Failed("items failed schema validation", context)
+            PendingFetchResult.Ok(PendingBatch(laneId, parsed.items, revision, context))
         } catch (e: Exception) {
             Log.w(TAG, "pending fetch: ${e.message}")
-            PendingBatch.empty(context)
+            PendingFetchResult.Failed(e.message ?: "request threw", context)
         }
     }
 
