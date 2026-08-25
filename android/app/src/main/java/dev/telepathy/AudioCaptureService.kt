@@ -837,7 +837,9 @@ class AudioCaptureService : Service() {
     // ---- capture start choreography (SCO-first, cued) ----
 
     @Volatile private var lastPhase = "listening"
-    @Volatile private var deferredAnnouncement: String? = null
+    /** Announcements deferred while mid-interaction; drained on listening. */
+    private val deferredAnnouncements =
+        java.util.concurrent.ConcurrentLinkedQueue<String>()
     @Volatile private var scoPending = false
     private val mainHandler = Handler(Looper.getMainLooper())
     private val teardownGuard = ServiceTeardownGuard()
@@ -1571,13 +1573,13 @@ class AudioCaptureService : Service() {
             val st = LaneStore.fetchState(this)
             mainHandler.post {
                 teardownGuard.runIfActive {
-                    val lane = st?.first?.find { it.active }
-                    val pendingTotal = st?.first?.sumOf { it.pending } ?: 0
+                    val lane = (st as? LaneStore.LaneStateResult.Ok)?.lanes?.find { it.active }
+                    val pendingTotal = (st as? LaneStore.LaneStateResult.Ok)?.lanes?.sumOf { it.pending } ?: 0
                     val line = buildString {
                         append(LinkState.current.summary)
-                        if ((st?.first?.size ?: 0) > 0 && pendingTotal > 0) append(" · $pendingTotal pending")
+                        if ((st as? LaneStore.LaneStateResult.Ok)?.lanes?.isNotEmpty() == true && pendingTotal > 0) append(" · $pendingTotal pending")
                     }
-                    Foreground.update(this, line, lane?.name ?: st?.second, pendingTotal)
+                    Foreground.update(this, line, lane?.name, pendingTotal)
                 }
             }
         }.start()
@@ -2696,7 +2698,7 @@ class AudioCaptureService : Service() {
                 if (lastPhase == "listening") {
                     announcer.say(text)
                 } else {
-                    deferredAnnouncement = text
+                    deferredAnnouncements.add(text)
                 }
             }
             is ServerMsg.AgentDelta -> {
@@ -2728,10 +2730,11 @@ class AudioCaptureService : Service() {
                 lastPhase = msg.value
                 LinkState.setPhase(msg.value)
                 if (msg.value == "listening") {
-                    deferredAnnouncement?.let { text ->
-                        deferredAnnouncement = null
-                        announcer.say(text)
-                    }
+                    // drain everything deferred, joined into one utterance
+                    val drained = generateSequence { deferredAnnouncements.poll() }
+                        .takeWhile { it != null }
+                        .toList()
+                    if (drained.isNotEmpty()) announcer.say(drained.joinToString(" … "))
                 }
                 TriggerLog.record(this, "· ${msg.value}")
             }

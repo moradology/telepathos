@@ -49,21 +49,28 @@ object LaneStore {
             token(ctx)?.let { header("x-telepathy-token", it) }
         }
 
-    /** Full registry + active name + per-lane pending counts. Null when unreachable/unset. */
-    fun fetchState(ctx: Context): Pair<List<LaneUi>, String>? {
-        val base = baseUrl(ctx) ?: return null
+    sealed interface LaneStateResult {
+        data class Ok(val lanes: List<LaneUi>, val activeName: String) : LaneStateResult
+        data object NotConfigured : LaneStateResult
+        data class Unreachable(val reason: String) : LaneStateResult
+    }
+
+    /** Full registry + active name + per-lane pending counts, with a truthful cause. */
+    fun fetchState(ctx: Context): LaneStateResult {
+        val base = baseUrl(ctx) ?: return LaneStateResult.NotConfigured
         return try {
             val response = client.newCall(request(ctx, "$base/api/state").build()).execute()
             if (!response.isSuccessful) {
                 response.close()
-                return null
+                return LaneStateResult.Unreachable("HTTP ${response.code}")
             }
             val o = BoundedHttpResponse.readJsonObject(response, HttpResponseLimits.LANE_STATE_BYTES)
-                ?: return null
+                ?: return LaneStateResult.Unreachable("malformed state body")
             val activeName = o.optString("active")
             val activeId = o.optString("active_id")
-            if (!isValidLaneId(activeId)) return null
-            val arr = o.optJSONArray("lanes") ?: return null
+            if (!isValidLaneId(activeId)) return LaneStateResult.Unreachable("invalid active lane id")
+            val arr = o.optJSONArray("lanes")
+                ?: return LaneStateResult.Unreachable("malformed state body")
             val lanes = (0 until arr.length()).map { i ->
                 val l = arr.optJSONObject(i)
                     ?: throw IllegalArgumentException("invalid lane entry")
@@ -77,10 +84,11 @@ object LaneStore {
                     pending = l.optInt("pending", 0),
                 )
             }
-            lanes to activeName
+            LaneStateResult.Ok(lanes, activeName)
+        } catch (e: IllegalArgumentException) {
+            LaneStateResult.Unreachable(e.message ?: "malformed state body")
         } catch (e: Exception) {
-            Log.w("Telepathy", "lane state unavailable: ${e.message}")
-            null
+            LaneStateResult.Unreachable(e.message ?: "unreachable")
         }
     }
 
@@ -113,14 +121,15 @@ object LaneStore {
     /** Cycle to the next lane in registry order. Fire-and-forget; logs outcome. */
     fun cycle(ctx: Context) {
         Thread {
-            val state = fetchState(ctx) ?: run {
-                Log.w("Telepathy", "cycle: server unreachable"); return@Thread
+            val state = fetchState(ctx)
+            val lanes = (state as? LaneStateResult.Ok)?.lanes ?: run {
+                Log.w("Telepathy", "cycle: ${state}"); return@Thread
             }
-            if (state.first.isEmpty()) return@Thread
-            val idx = state.first.indexOfFirst { it.active }.coerceAtLeast(0)
-            val next = state.first[(idx + 1) % state.first.size]
+            if (lanes.isEmpty()) return@Thread
+            val idx = lanes.indexOfFirst { it.active }.coerceAtLeast(0)
+            val next = lanes[(idx + 1) % lanes.size]
             if (switch(ctx, next.id)) {
-                TriggerLog.record(ctx, "→ ${next.name} (${state.first.size} lanes)")
+                TriggerLog.record(ctx, "→ ${next.name} (${lanes.size} lanes)")
             } else {
                 Log.w("Telepathy", "cycle switch failed")
             }

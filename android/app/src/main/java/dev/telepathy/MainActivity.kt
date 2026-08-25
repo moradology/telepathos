@@ -302,24 +302,30 @@ class MainActivity : AppCompatActivity() {
         refreshAll()
     }
 
-    /** Lane list from telepathyd; tap a lane row to switch to it. */
+    /** Lane list from telepathyd; tap the block to cycle to the next lane. */
     private fun refreshLanes() {
         Thread {
-            val state = LaneStore.fetchState(this)
+            val result = LaneStore.fetchState(this)
             runOnUiThread {
-                if (state == null) {
-                    lanesView.setTextColor(dim)
-                    lanesView.text = "(server unreachable)"
-                    return@runOnUiThread
+                when (result) {
+                    is LaneStore.LaneStateResult.NotConfigured -> {
+                        lanesView.setTextColor(dim)
+                        lanesView.text = "(no telepathyd URL configured)"
+                    }
+                    is LaneStore.LaneStateResult.Unreachable -> {
+                        lanesView.setTextColor(dim)
+                        lanesView.text = "(unreachable: ${result.reason})"
+                    }
+                    is LaneStore.LaneStateResult.Ok -> {
+                        lanesView.text = result.lanes.joinToString("\n") { l ->
+                            val mark = if (l.active) "▸" else " "
+                            val badge = if (l.pending > 0) "  📌${l.pending}" else ""
+                            val t = l.title?.let { " — $it" } ?: ""
+                            "$mark ${l.name}$t$badge"
+                        }
+                        lanesView.setTextColor(Color.BLACK)
+                    }
                 }
-                val (lanes, _) = state
-                lanesView.text = lanes.joinToString("\n") { l ->
-                    val mark = if (l.active) "▸" else " "
-                    val badge = if (l.pending > 0) "  📌${l.pending}" else ""
-                    val t = l.title?.let { " — $it" } ?: ""
-                    "$mark ${l.name}$t$badge"
-                }
-                lanesView.setTextColor(Color.BLACK)
             }
         }.start()
     }
