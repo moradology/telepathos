@@ -1,5 +1,5 @@
-use telepathy_lanes::LaneRegistry;
-use telepathy_steering::{execute_tool, run, NullProvider, SteeringTool};
+use telepathos_lanes::LaneRegistry;
+use telepathos_steering::{execute_tool, run, NullProvider, SteeringTool};
 
 #[tokio::test]
 async fn null_provider_loop_returns_text() {
@@ -11,7 +11,7 @@ async fn null_provider_loop_returns_text() {
 #[test]
 fn tools_stay_constrained() {
     // policy: the full surface is exactly these six, forever
-    let names: Vec<&str> = telepathy_steering::tools().iter().map(|t| t.name).collect();
+    let names: Vec<&str> = telepathos_steering::tools().iter().map(|t| t.name).collect();
     assert_eq!(
         names,
         vec![

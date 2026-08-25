@@ -1,6 +1,6 @@
 # Auth model: Tailscale is the identity layer
 
-Telepathy's services assume they run inside your tailnet. Authentication,
+Telepathos's services assume they run inside your tailnet. Authentication,
 encryption, and revocation are handled by Tailscale at the network layer —
 **no application auth is required or recommended**.
 
@@ -18,19 +18,19 @@ encryption, and revocation are handled by Tailscale at the network layer —
 ## Deployment (3090 box)
 
 ```sh
-# telepathyd — bind loopback, expose via tailscale serve (TLS + identity)
-TELEPATHY_BIND=127.0.0.1 TELEPATHY_API_PORT=8790 ./target/debug/telepathyd &
+# telepathosd — bind loopback, expose via tailscale serve (TLS + identity)
+TELEPATHOS_BIND=127.0.0.1 TELEPATHOS_API_PORT=8790 ./target/debug/telepathosd &
 tailscale serve --bg --https=8443 http://127.0.0.1:8790
 
 # node bridge — same pattern
-TELEPATHY_PORT=8787 node server/dist/index.js &
+TELEPATHOS_PORT=8787 node server/dist/index.js &
 tailscale serve --bg --https=8443 http://127.0.0.1:8787
 # (or run one `tailscale serve` with path prefixes; see `tailscale serve --help`)
 ```
 
 Phone-side connection fields (create a `tailscale` profile):
 - bridge:      `wss://<machine-name>.<tailnet>.ts.net:8443`
-- telepathyd:  `https://<machine-name>.<tailnet>.ts.net:8443`
+- telepathosd:  `https://<machine-name>.<tailnet>.ts.net:8443`
 
 Valid certificates, no cleartext policy exceptions needed on the phone
 (the debug-only overlay exists for emulator/LAN-HTTP development).
@@ -39,7 +39,7 @@ Valid certificates, no cleartext policy exceptions needed on the phone
 
 - **Tailscale ACLs** — scope which tailnet devices may reach ports 8787/8790.
   Default tailnet policy (all devices → all devices) is fine for personal use.
-- **Optional bearer token** — `TELEPATHY_TOKEN` still works as a second factor
+- **Optional bearer token** — `TELEPATHOS_TOKEN` still works as a second factor
   (bridge hello + lane API header) if you ever expose services beyond the
   tailnet. Off by default.
 - **Relay HMAC** — the Hermes gateway link keeps its per-gateway secret
@@ -47,6 +47,6 @@ Valid certificates, no cleartext policy exceptions needed on the phone
 
 ## What auth is NOT for here
 
-Multi-user. Telepathy is single-user by design (one human's earbuds, one
+Multi-user. Telepathos is single-user by design (one human's earbuds, one
 human's agents). If that ever changes, the answer is separate tailnet ACL
 groups plus Hermes profile routing — still no application auth.

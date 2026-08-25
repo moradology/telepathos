@@ -6,7 +6,7 @@ gateway:
 
 # No toolset gates: tools may produce any artifact (images included — they can
 # be sent along as links/attachments). The constraint is on RESPONSE
-# COMPOSITION, enforced by the platform hint in telepathyd's descriptor:
+# COMPOSITION, enforced by the platform hint in telepathosd's descriptor:
 # every reply must carry its own spoken summary; an artifact is never the
 # whole reply.
 

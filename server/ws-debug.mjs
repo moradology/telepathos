@@ -5,7 +5,7 @@ ws.on("message", (d) => {
   const m = JSON.parse(d.toString());
   console.log("<<", m.type + (m.text ? `:${m.text.slice(0, 40)}` : ""));
   if (m.type === "ready") {
-    ws.send(JSON.stringify({ type: "lane", id: "telepathy:direct", turn_token: TOKEN }));
+    ws.send(JSON.stringify({ type: "lane", id: "telepathos:direct", turn_token: TOKEN }));
   }
   if (m.type === "lane_ack" || m.type === "phase") {
     if (!global.loudSent) {

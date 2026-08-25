@@ -3,7 +3,7 @@
 import WebSocket from "ws";
 import fs from "node:fs";
 
-const PORT = process.env.TELEPATHY_PORT ?? "8802";
+const PORT = process.env.TELEPATHOS_PORT ?? "8802";
 let failures = 0;
 const check = (name, ok, detail = "") => {
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? " — " + detail : ""}`);
@@ -49,7 +49,7 @@ check("handshake: descriptor received", !!descriptor,
 ndjson({
   type: "outbound",
   requestId: "r1",
-  action: { op: "send", chat_id: "telepathy:direct", content: "Nightly tests: 142 passed." },
+  action: { op: "send", chat_id: "telepathos:direct", content: "Nightly tests: 142 passed." },
 });
 for (let i = 0; i < 30 && results.length === 0; i++) await new Promise(r => setTimeout(r, 100));
 check("outbound_result received", results.length === 1, JSON.stringify(results[0] ?? {}));
@@ -59,7 +59,7 @@ check("result reports success", results[0]?.result?.success === true);
 ndjson({
   type: "outbound",
   requestId: "r2",
-  action: { op: "send", chat_id: "telepathy:direct", content: "Deploy finished." },
+  action: { op: "send", chat_id: "telepathos:direct", content: "Deploy finished." },
 });
 await new Promise((r) => setTimeout(r, 500));
 

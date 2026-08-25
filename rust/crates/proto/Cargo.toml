@@ -1,5 +1,5 @@
 [package]
-name = "telepathy-proto"
+name = "telepathos-proto"
 version.workspace = true
 edition.workspace = true
 

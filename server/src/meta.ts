@@ -2,7 +2,7 @@
  * The meta agent's brain: a PURE function from transcript + registry to a
  * meta-action. No I/O, no LLM, fully property-testable.
  *
- * Entry is via double-pinch (meta mode) or the "meta"/"telepathy" voice
+ * Entry is via double-pinch (meta mode) or the "meta"/"telepathos" voice
  * codeword — the caller strips the codeword and hands us the remainder.
  */
 

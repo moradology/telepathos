@@ -12,5 +12,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "telepathy"
+rootProject.name = "telepathos"
 include(":app")

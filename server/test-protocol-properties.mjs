@@ -149,28 +149,28 @@ const VALID = [
   '{"type":"command","command":"cancel_capture","turn_token":"turn-1"}',
   '{"type":"utterance_end","turn_token":"turn-1"}',
   '{"type":"meta_mode","turn_token":"turn-1"}',
-  '{"type":"lane","id":"telepathy:direct","turn_token":"turn-1"}',
-  '{"type":"reply_received","lane_id":"telepathy:direct","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}',
-  '{"type":"reply_ack","lane_id":"telepathy:direct","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}',
-  '{"type":"reply_ack_retire","lane_id":"telepathy:direct","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}',
+  '{"type":"lane","id":"telepathos:direct","turn_token":"turn-1"}',
+  '{"type":"reply_received","lane_id":"telepathos:direct","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}',
+  '{"type":"reply_ack","lane_id":"telepathos:direct","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}',
+  '{"type":"reply_ack_retire","lane_id":"telepathos:direct","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}',
 ];
 const VALID_KINDS = ["stop", "repeat", "cancel_capture"];
 let failures = 0;
 
 for (const laneId of [
-  "telepathy:direct",
-  "telepathy:repo:geospatial-migration",
+  "telepathos:direct",
+  "telepathos:repo:geospatial-migration",
 ]) {
   if (!isValidLaneId(laneId)) {
     console.log("FAIL: rejected valid lane ID", laneId); failures++;
   }
 }
 for (const laneId of [
-  'telepathy:repo:quote"',
-  "telepathy:repo:backslash\\",
-  "telepathy:repo:control\u0000",
-  "telepathy:repo:é",
-  `telepathy:repo:${"a".repeat(MAX_LANE_ID_LENGTH)}`,
+  'telepathos:repo:quote"',
+  "telepathos:repo:backslash\\",
+  "telepathos:repo:control\u0000",
+  "telepathos:repo:é",
+  `telepathos:repo:${"a".repeat(MAX_LANE_ID_LENGTH)}`,
 ]) {
   const frame = {
     type: "reply_received", lane_id: laneId, reply_to: "tp-1",
@@ -183,11 +183,11 @@ for (const laneId of [
 for (const laneId of [
   "",
   " ",
-  'telepathy:repo:quote"',
-  "telepathy:repo:backslash\\",
-  "telepathy:repo:control\n",
-  "telepathy:repo:é",
-  `telepathy:repo:${"a".repeat(MAX_LANE_ID_LENGTH)}`,
+  'telepathos:repo:quote"',
+  "telepathos:repo:backslash\\",
+  "telepathos:repo:control\n",
+  "telepathos:repo:é",
+  `telepathos:repo:${"a".repeat(MAX_LANE_ID_LENGTH)}`,
 ]) {
   if (isValidLaneId(laneId)) {
     console.log("FAIL: accepted invalid lane ID", JSON.stringify(laneId)); failures++;
@@ -222,8 +222,8 @@ for (const kind of VALID_KINDS) {
     console.log("FAIL: bad round-trip for", kind); failures++;
   }
 }
-const lane = parseControl('{"type":"lane","id":"telepathy:direct","turn_token":"turn-1"}');
-if (lane?.tag !== "lane" || lane.id !== "telepathy:direct" || lane.turnToken !== "turn-1") {
+const lane = parseControl('{"type":"lane","id":"telepathos:direct","turn_token":"turn-1"}');
+if (lane?.tag !== "lane" || lane.id !== "telepathos:direct" || lane.turnToken !== "turn-1") {
   console.log("FAIL: bad lane snapshot"); failures++;
 }
 const hello = parseControl('{"type":"hello","device":"x","installation_id":"installation-x"}');
@@ -248,23 +248,23 @@ for (const token of [42, {}, null, []]) {
     console.log("FAIL: accepted invalid hello token", JSON.stringify(token)); failures++;
   }
 }
-const replyAck = parseControl('{"type":"reply_ack","lane_id":"telepathy:direct","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}');
-if (replyAck?.tag !== "reply_ack" || replyAck.laneId !== "telepathy:direct" || replyAck.replyTo !== "tp-1" || replyAck.throughSeq !== 1 || replyAck.turnToken !== "turn-1" || replyAck.interactionId !== "i-1") {
+const replyAck = parseControl('{"type":"reply_ack","lane_id":"telepathos:direct","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}');
+if (replyAck?.tag !== "reply_ack" || replyAck.laneId !== "telepathos:direct" || replyAck.replyTo !== "tp-1" || replyAck.throughSeq !== 1 || replyAck.turnToken !== "turn-1" || replyAck.interactionId !== "i-1") {
   console.log("FAIL: bad reply acknowledgement"); failures++;
 }
-const replyReceived = parseControl('{"type":"reply_received","lane_id":"telepathy:direct","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}');
-if (replyReceived?.tag !== "reply_received" || replyReceived.laneId !== "telepathy:direct" || replyReceived.replyTo !== "tp-1" || replyReceived.throughSeq !== 1 || replyReceived.turnToken !== "turn-1" || replyReceived.interactionId !== "i-1") {
+const replyReceived = parseControl('{"type":"reply_received","lane_id":"telepathos:direct","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}');
+if (replyReceived?.tag !== "reply_received" || replyReceived.laneId !== "telepathos:direct" || replyReceived.replyTo !== "tp-1" || replyReceived.throughSeq !== 1 || replyReceived.turnToken !== "turn-1" || replyReceived.interactionId !== "i-1") {
   console.log("FAIL: bad durable reply receipt"); failures++;
 }
-const replyAckRetire = parseControl('{"type":"reply_ack_retire","lane_id":"telepathy:direct","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}');
-if (replyAckRetire?.tag !== "reply_ack_retire" || replyAckRetire.laneId !== "telepathy:direct" || replyAckRetire.replyTo !== "tp-1" || replyAckRetire.throughSeq !== 1 || replyAckRetire.turnToken !== "turn-1" || replyAckRetire.interactionId !== "i-1") {
+const replyAckRetire = parseControl('{"type":"reply_ack_retire","lane_id":"telepathos:direct","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}');
+if (replyAckRetire?.tag !== "reply_ack_retire" || replyAckRetire.laneId !== "telepathos:direct" || replyAckRetire.replyTo !== "tp-1" || replyAckRetire.throughSeq !== 1 || replyAckRetire.turnToken !== "turn-1" || replyAckRetire.interactionId !== "i-1") {
   console.log("FAIL: bad reply acknowledgement retirement"); failures++;
 }
 
 // 3. turn tokens are bounded before any caller can retain them.
 const generatedUuid = "123e4567-e89b-12d3-a456-426614174000";
 if (generatedUuid.length >= MAX_TURN_TOKEN_LENGTH || parseControl(JSON.stringify({
-  type: "lane", id: "telepathy:direct", turn_token: generatedUuid,
+  type: "lane", id: "telepathos:direct", turn_token: generatedUuid,
 })) === null) {
   console.log("FAIL: rejected a generated UUID turn token"); failures++;
 }
@@ -273,17 +273,17 @@ const TURN_TOKEN_FRAMES = [
   ["command", { type: "command", command: "stop" }],
   ["utterance_end", { type: "utterance_end" }],
   ["meta_mode", { type: "meta_mode" }],
-  ["lane", { type: "lane", id: "telepathy:direct" }],
+  ["lane", { type: "lane", id: "telepathos:direct" }],
   ["reply_received", {
-    type: "reply_received", lane_id: "telepathy:direct", reply_to: "tp-1",
+    type: "reply_received", lane_id: "telepathos:direct", reply_to: "tp-1",
     after_seq: 0, through_seq: 1, interaction_id: "i-1",
   }],
   ["reply_ack", {
-    type: "reply_ack", lane_id: "telepathy:direct", reply_to: "tp-1",
+    type: "reply_ack", lane_id: "telepathos:direct", reply_to: "tp-1",
     after_seq: 0, through_seq: 1, interaction_id: "i-1",
   }],
   ["reply_ack_retire", {
-    type: "reply_ack_retire", lane_id: "telepathy:direct", reply_to: "tp-1",
+    type: "reply_ack_retire", lane_id: "telepathos:direct", reply_to: "tp-1",
     after_seq: 0, through_seq: 1, interaction_id: "i-1",
   }],
 ];
@@ -330,10 +330,10 @@ const NEAR_MISS = [
   '{"type":"command","command":"stop"}',         // hard cutover: token required
   '{"type":"utterance_end"}',
   '{"type":"meta_mode","turn_token":""}',
-  '{"type":"lane","id":"telepathy:direct"}',
-  '{"type":"reply_received","lane_id":"telepathy:direct","reply_to":"tp-1","after_seq":0,"through_seq":1}',
-  '{"type":"reply_ack","lane_id":"telepathy:direct","reply_to":"tp-1","after_seq":0,"through_seq":1}',
-  '{"type":"reply_ack_retire","lane_id":"telepathy:direct","reply_to":"tp-1","after_seq":0,"through_seq":1}',
+  '{"type":"lane","id":"telepathos:direct"}',
+  '{"type":"reply_received","lane_id":"telepathos:direct","reply_to":"tp-1","after_seq":0,"through_seq":1}',
+  '{"type":"reply_ack","lane_id":"telepathos:direct","reply_to":"tp-1","after_seq":0,"through_seq":1}',
+  '{"type":"reply_ack_retire","lane_id":"telepathos:direct","reply_to":"tp-1","after_seq":0,"through_seq":1}',
   '{"type":"hello"}',
   '{"type":"hello","device":42}',
   '{"type":"hello","device":"x","installation_id":42}',

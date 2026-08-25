@@ -7,8 +7,8 @@ Request:  {"id": "...", "path": "/tmp/utt.wav", "prompt": "vocab hints or null"}
 Response: {"id": "...", "text": "...", "confidence": 0.83, "language": "en"}
 
 Config via env:
-  TELEPATHY_WHISPER_MODEL  model size/name (default: large-v3)
-  TELEPATHY_WHISPER_DEVICE cuda | cpu (default: cuda)
+  TELEPATHOS_WHISPER_MODEL  model size/name (default: large-v3)
+  TELEPATHOS_WHISPER_DEVICE cuda | cpu (default: cuda)
 """
 
 import json
@@ -20,8 +20,8 @@ import sys
 def main():
     from faster_whisper import WhisperModel
 
-    model_size = os.environ.get("TELEPATHY_WHISPER_MODEL", "large-v3")
-    device = os.environ.get("TELEPATHY_WHISPER_DEVICE", "cuda")
+    model_size = os.environ.get("TELEPATHOS_WHISPER_MODEL", "large-v3")
+    device = os.environ.get("TELEPATHOS_WHISPER_DEVICE", "cuda")
     compute_type = "float16" if device == "cuda" else "int8"
 
     model = WhisperModel(model_size, device=device, compute_type=compute_type)

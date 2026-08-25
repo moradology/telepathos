@@ -5,6 +5,6 @@
 -->
 <voice-interaction-service
     xmlns:android="http://schemas.android.com/apk/res/android"
-    android:sessionService="dev.telepathy/.TelepathyInteractionSessionService"
+    android:sessionService="dev.telepathos/.TelepathosInteractionSessionService"
     android:supportsAssist="true"
     android:supportsLaunchVoiceAssistFromKeyguard="false" />

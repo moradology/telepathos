@@ -187,7 +187,7 @@ impl Provider for OpenAiProvider {
 mod tests {
     use super::*;
     use crate::{execute_tool, run, tools, SteeringTool};
-    use telepathy_lanes::LaneRegistry;
+    use telepathos_lanes::LaneRegistry;
 
     #[test]
     fn request_body_has_tools_in_openai_shape() {

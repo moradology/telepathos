@@ -12,7 +12,7 @@ import {
 import { MAX_REPLY_TEXT_BYTES } from "./reply-text.js";
 
 /**
- * STT for a complete utterance (WAV bytes). Backends (TELEPATHY_STT):
+ * STT for a complete utterance (WAV bytes). Backends (TELEPATHOS_STT):
  *  - "openai" : whisper-1 API — no confidence score available
  *  - "local"  : faster-whisper via scripts/whisper_worker.py — confidence +
  *               vocabulary boosting (initial_prompt); the 3090 endgame
@@ -34,10 +34,10 @@ function parseOpenAiTranscript(value: unknown): Transcript | null {
 
 /** Vocabulary hint: repo terms make Whisper stop mangling identifiers. */
 function vocabPrompt(): string | undefined {
-  const direct = process.env.TELEPATHY_VOCAB;
+  const direct = process.env.TELEPATHOS_VOCAB;
   if (direct) return direct;
   // comma/newline separated file, generated from the repo (git ls-files etc.)
-  const file = process.env.TELEPATHY_VOCAB_FILE;
+  const file = process.env.TELEPATHOS_VOCAB_FILE;
   if (file) {
     try {
       return readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean).join(", ").slice(0, 2000);
@@ -144,7 +144,7 @@ class LocalWhisper {
     signal?.throwIfAborted();
     const proc = this.ensure();
     const id = `u${++this.seq}-${randomUUID()}`;
-    const path = `/tmp/telepathy-utt-${id}.wav`;
+    const path = `/tmp/telepathos-utt-${id}.wav`;
     try {
       // Utterances are private voice data. Set the mode at creation so a
       // permissive process umask cannot expose the in-flight WAV to another

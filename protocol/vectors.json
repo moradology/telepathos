@@ -31,31 +31,31 @@
         "tag": "meta_mode"
       },
       {
-        "frame": "{\"type\":\"lane\",\"id\":\"telepathy:direct\",\"turn_token\":\"t1\"}",
+        "frame": "{\"type\":\"lane\",\"id\":\"telepathos:direct\",\"turn_token\":\"t1\"}",
         "tag": "lane"
       },
       {
-        "frame": "{\"type\":\"lane\",\"id\":\"telepathy:direct\",\"turn_token\":\"t1\",\"revision\":7}",
+        "frame": "{\"type\":\"lane\",\"id\":\"telepathos:direct\",\"turn_token\":\"t1\",\"revision\":7}",
         "tag": "lane"
       },
       {
-        "frame": "{\"type\":\"reply_received\",\"lane_id\":\"telepathy:direct\",\"reply_to\":\"r-1\",\"after_seq\":1,\"through_seq\":2,\"turn_token\":\"t1\",\"interaction_id\":\"i-1\"}",
+        "frame": "{\"type\":\"reply_received\",\"lane_id\":\"telepathos:direct\",\"reply_to\":\"r-1\",\"after_seq\":1,\"through_seq\":2,\"turn_token\":\"t1\",\"interaction_id\":\"i-1\"}",
         "tag": "reply_received"
       },
       {
-        "frame": "{\"type\":\"reply_ack\",\"lane_id\":\"telepathy:direct\",\"reply_to\":\"r-1\",\"after_seq\":1,\"through_seq\":2,\"turn_token\":\"t1\",\"interaction_id\":\"i-1\"}",
+        "frame": "{\"type\":\"reply_ack\",\"lane_id\":\"telepathos:direct\",\"reply_to\":\"r-1\",\"after_seq\":1,\"through_seq\":2,\"turn_token\":\"t1\",\"interaction_id\":\"i-1\"}",
         "tag": "reply_ack"
       },
       {
-        "frame": "{\"type\":\"reply_ack_retire\",\"lane_id\":\"telepathy:direct\",\"reply_to\":\"r-1\",\"after_seq\":1,\"through_seq\":2,\"turn_token\":\"t1\",\"interaction_id\":\"i-1\"}",
+        "frame": "{\"type\":\"reply_ack_retire\",\"lane_id\":\"telepathos:direct\",\"reply_to\":\"r-1\",\"after_seq\":1,\"through_seq\":2,\"turn_token\":\"t1\",\"interaction_id\":\"i-1\"}",
         "tag": "reply_ack_retire"
       },
       {
-        "frame": "{\"type\":\"lane\",\"id\":\"TELEPATHY:DIRECT\",\"turn_token\":\"t1\"}",
+        "frame": "{\"type\":\"lane\",\"id\":\"TELEPATHOS:DIRECT\",\"turn_token\":\"t1\"}",
         "tag": "lane"
       },
       {
-        "frame": "{\"type\":\"lane\",\"id\":\"telepathy::direct\",\"turn_token\":\"t1\"}",
+        "frame": "{\"type\":\"lane\",\"id\":\"telepathos::direct\",\"turn_token\":\"t1\"}",
         "tag": "lane"
       }
     ],
@@ -69,11 +69,11 @@
       "{\"type\":\"command\",\"command\":\"stop\",\"turn_token\":\"\"}",
       "{\"type\":\"utterance_end\"}",
       "{\"type\":\"meta_mode\"}",
-      "{\"type\":\"lane\",\"id\":\"-telepathy\",\"turn_token\":\"t1\"}",
+      "{\"type\":\"lane\",\"id\":\"-telepathos\",\"turn_token\":\"t1\"}",
       "{\"type\":\"lane\",\"turn_token\":\"t1\"}",
-      "{\"type\":\"reply_received\",\"lane_id\":\"telepathy:direct\",\"reply_to\":\"r-1\",\"after_seq\":2,\"through_seq\":2,\"turn_token\":\"t1\",\"interaction_id\":\"i-1\"}",
-      "{\"type\":\"reply_received\",\"lane_id\":\"telepathy:direct\",\"reply_to\":\"r-1\",\"after_seq\":1,\"turn_token\":\"t1\",\"interaction_id\":\"i-1\"}",
-      "{\"type\":\"reply_ack\",\"lane_id\":\"telepathy:direct\",\"reply_to\":\"r-1\",\"after_seq\":1,\"through_seq\":2,\"turn_token\":\"t1\"}",
+      "{\"type\":\"reply_received\",\"lane_id\":\"telepathos:direct\",\"reply_to\":\"r-1\",\"after_seq\":2,\"through_seq\":2,\"turn_token\":\"t1\",\"interaction_id\":\"i-1\"}",
+      "{\"type\":\"reply_received\",\"lane_id\":\"telepathos:direct\",\"reply_to\":\"r-1\",\"after_seq\":1,\"turn_token\":\"t1\",\"interaction_id\":\"i-1\"}",
+      "{\"type\":\"reply_ack\",\"lane_id\":\"telepathos:direct\",\"reply_to\":\"r-1\",\"after_seq\":1,\"through_seq\":2,\"turn_token\":\"t1\"}",
       "{\"type\":\"approve\"}",
       "{\"type\":\"unknown_weird\"}",
       "[]",

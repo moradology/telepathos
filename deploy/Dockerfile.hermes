@@ -1,4 +1,4 @@
-# Hermes gateway for the telepathy relay test.
+# Hermes gateway for the telepathos relay test.
 # Builds from the upstream repo; first build downloads a few hundred MB.
 FROM ghcr.io/astral-sh/uv:latest@sha256:e85be844203885286c60ffad8a858d48afb6c5a5c237ca0e67f12e74b8f174b1 AS uv
 FROM python:3.11-slim

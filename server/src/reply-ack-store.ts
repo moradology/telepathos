@@ -18,12 +18,12 @@ import {
 } from "./protocol.js";
 import { MAX_REPLY_TEXT_BYTES } from "./reply-text.js";
 import {
-  currentTelepathydTargetIdentity,
+  currentTelepathosdTargetIdentity,
   isTargetIdentity,
 } from "./target-scope.js";
 
 export interface ReplyAckBinding {
-  /** Hash of the normalized telepathyd URL and effective auth configuration. */
+  /** Hash of the normalized telepathosd URL and effective auth configuration. */
   targetIdentity: string;
   /** Stable opaque owner from hello.installation_id; never a device label. */
   installationId: string;
@@ -47,7 +47,7 @@ export interface ReplyAckBinding {
   ownerLastSeenAtMs: number;
   /** Wall-clock time at which the handset proved local receipt, if any. */
   receivedAtMs: number | null;
-  /** Wall-clock time at which telepathyd consumption completed, if any. */
+  /** Wall-clock time at which telepathosd consumption completed, if any. */
   consumedAtMs: number | null;
 }
 
@@ -118,7 +118,7 @@ export function setReplyAckStoreDirectorySyncHookForTests(
 }
 
 function defaultPath(): string {
-  return `${process.env.TELEPATHY_LANES ?? "lanes.json"}.reply-ack-bindings.json`;
+  return `${process.env.TELEPATHOS_LANES ?? "lanes.json"}.reply-ack-bindings.json`;
 }
 
 function key(binding: Pick<ReplyAckBinding, "laneId" | "replyTo" | "afterSeq" | "throughSeq">): string {
@@ -351,17 +351,17 @@ export class ReplyAckStore {
   private readonly targetIdentity: string;
   private persistenceFailure: string | null = null;
 
-  constructor(path = defaultPath(), targetIdentity = currentTelepathydTargetIdentity()) {
+  constructor(path = defaultPath(), targetIdentity = currentTelepathosdTargetIdentity()) {
     this.path = path;
     this.targetIdentity = targetIdentity;
   }
 
   /** Throws on runtime URL/token changes; durable rows remain untouched. */
   assertCurrentTarget(): void {
-    const current = currentTelepathydTargetIdentity();
+    const current = currentTelepathosdTargetIdentity();
     if (current !== this.targetIdentity) {
       throw new Error(
-        `reply-ack store ${this.path}: telepathyd target identity changed; durable receipts remain pending`,
+        `reply-ack store ${this.path}: telepathosd target identity changed; durable receipts remain pending`,
       );
     }
   }

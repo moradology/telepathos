@@ -235,7 +235,7 @@ pub fn execute(reg: &mut LaneRegistry, action: MetaAction, notes_path: &std::pat
         },
         MetaAction::Brief(lane_opt) => {
             let lane = lane_opt.unwrap_or_else(|| reg.active().clone());
-            if lane.id == "telepathy:direct" {
+            if lane.id == "telepathos:direct" {
                 return "Direct line to Hermes. No project context.".into();
             }
             let age = crate::age_summary(&lane.last_active);

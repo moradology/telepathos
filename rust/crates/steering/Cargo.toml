@@ -1,10 +1,10 @@
 [package]
-name = "telepathy-steering"
+name = "telepathos-steering"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-telepathy-lanes = { path = "../lanes" }
+telepathos-lanes = { path = "../lanes" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 async-trait = { workspace = true }

@@ -16,10 +16,10 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ## The make-or-break test (do this first, ~30 min)
 
 1. Open `android/` in Android Studio, build, install on the Pixel 9.
-2. **Settings → Apps → Default apps → Digital assistant app → Telepathy**
-   (also set "Use screenshot/skin" style options to Telepathy if asked).
+2. **Settings → Apps → Default apps → Digital assistant app → Telepathos**
+   (also set "Use screenshot/skin" style options to Telepathos if asked).
 3. In the Shokz app: map the pinch gesture (or any gesture) to *voice assistant*.
-4. Pinch. Open Telepathy — if `SESSION SHOWN` appears in the event log, the
+4. Pinch. Open Telepathos — if `SESSION SHOWN` appears in the event log, the
    trigger reaches third-party code and the architecture is viable.
 5. If nothing appears: try long-press-power / corner-swipe assist as a sanity
    check that the assistant registration itself works. If those work but the
@@ -28,7 +28,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## What's implemented
 
-- `TelepathyVoiceInteractionService` + session service/session — assist trigger chain
+- `TelepathosVoiceInteractionService` + session service/session — assist trigger chain
 - `AudioCaptureService` — foreground mic capture (16 kHz PCM16) → WebSocket binary frames
 - `LocalAnnouncer` — local TTS for `agent_end` replies and offline status announcements
 - AVRCP media-key taps — `stop`, `repeat`, `cancel_capture`; tap-to-flush sends `utterance_end`

@@ -1373,16 +1373,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "telepathy-lanes"
+name = "telepathos-lanes"
 version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
- "telepathy-proto",
+ "telepathos-proto",
 ]
 
 [[package]]
-name = "telepathy-proto"
+name = "telepathos-proto"
 version = "0.1.0"
 dependencies = [
  "serde",
@@ -1390,7 +1390,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "telepathy-steering"
+name = "telepathos-steering"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1398,12 +1398,12 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "telepathy-lanes",
+ "telepathos-lanes",
  "tokio",
 ]
 
 [[package]]
-name = "telepathyd"
+name = "telepathosd"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1417,9 +1417,9 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "telepathy-lanes",
- "telepathy-proto",
- "telepathy-steering",
+ "telepathos-lanes",
+ "telepathos-proto",
+ "telepathos-steering",
  "tokio",
 ]
 

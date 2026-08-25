@@ -35,12 +35,12 @@ const check = (name, ok, detail = "") => {
 // fresh registry with two lanes
 const reg = {
   lanes: [
-    { id: "telepathy:direct", name: "direct", createdAt: "", lastActive: "" },
-    { id: "telepathy:repo:kerchunk", name: "kerchunk", createdAt: "", lastActive: "" },
-    { id: "telepathy:repo:telepathy", name: "telepathy", createdAt: "", lastActive: "" },
+    { id: "telepathos:direct", name: "direct", createdAt: "", lastActive: "" },
+    { id: "telepathos:repo:kerchunk", name: "kerchunk", createdAt: "", lastActive: "" },
+    { id: "telepathos:repo:telepathos", name: "telepathos", createdAt: "", lastActive: "" },
   ],
-  activeId: "telepathy:repo:telepathy",
-  previousId: "telepathy:direct",
+  activeId: "telepathos:repo:telepathos",
+  previousId: "telepathos:direct",
 };
 
 // 1. switch commands, including STT-mangled lane names
@@ -50,7 +50,7 @@ check("switch mangled STT ('kirk chunk')", (() => {
   return a.op === "switch" && a.lane.name === "kerchunk";
 })());
 check("go to X", parseMeta("go to direct", reg).op === "switch");
-check("work on the telepathy", parseMeta("work on the telepathy", reg).op === "switch");
+check("work on the telepathos", parseMeta("work on the telepathos", reg).op === "switch");
 check("bare lane name switches", parseMeta("kerchunk", reg).op === "switch");
 
 // 2. collision safety: non-lane targets must NOT intercept
@@ -77,32 +77,34 @@ check("random sentence is unknown", parseMeta("why do the tests fail on tuesdays
 check("empty is unknown", parseMeta("", reg).op === "unknown");
 
 // 5. registry mechanics (temp file)
-process.env.TELEPATHY_LANES = "/tmp/telepathy-test-lanes.json";
-try { rmSync("/tmp/telepathy-test-lanes.json"); } catch {}
+process.env.TELEPATHOS_LANES = "/tmp/telepathos-test-lanes.json";
+try { rmSync("/tmp/telepathos-test-lanes.json"); } catch {}
 const reg2 = loadLanes();
 check("fresh registry has direct lane", reg2.lanes.length === 1 && reg2.lanes[0].name === "direct");
-switchLane(reg2, "telepathy:direct");
+switchLane(reg2, "telepathos:direct");
 const lane = createLane(reg2, "Geospatial Migration!");
-check("createLane slugs", lane.id === "telepathy:repo:geospatial-migration" && lane.name === "geospatial-migration");
+check("createLane slugs", lane.id === "telepathos:repo:geospatial-migration" && lane.name === "geospatial-migration");
 const punctuationLane = createLane(reg2, "A ! B");
-check("createLane preserves Rust's internal dash runs", punctuationLane.id === "telepathy:repo:a---b");
+check("createLane preserves Rust's internal dash runs", punctuationLane.id === "telepathos:repo:a---b");
 switchLane(reg2, lane.id);
 check("active is new lane", activeLane(reg2).id === lane.id);
-switchLane(reg2, "telepathy:direct");
+switchLane(reg2, "telepathos:direct");
 saveLanes(reg2);
 const reloaded = loadLanes();
-check("persist + reload", reloaded.lanes.length === 3 && reloaded.activeId === "telepathy:direct");
+check("persist + reload", reloaded.lanes.length === 3 && reloaded.activeId === "telepathos:direct");
 
 // The Node and Rust registry owners share a hard 256-lane limit. Construct
 // maximum-length normal lanes so this also proves the complete daemon state
 // envelope stays comfortably below the 1 MiB bridge transport cap.
-const laneNameAtCapacity = (index) => `${String(index).padStart(3, "0")}-${"x".repeat(109)}`;
-const capacityRoot = mkdtempSync("/tmp/telepathy-node-lane-capacity-");
+// Slug budget: "telepathos:repo:" prefix (16) leaves 112 slug chars under
+// MAX_LANE_ID_LENGTH; the 4-char index prefix leaves 108 for the x-run.
+const laneNameAtCapacity = (index) => `${String(index).padStart(3, "0")}-${"x".repeat(108)}`;
+const capacityRoot = mkdtempSync("/tmp/telepathos-node-lane-capacity-");
 const capacityPath = join(capacityRoot, "lanes.json");
-const lanePathBeforeCapacityTests = process.env.TELEPATHY_LANES;
+const lanePathBeforeCapacityTests = process.env.TELEPATHOS_LANES;
 let capacityApiChild;
 try {
-  process.env.TELEPATHY_LANES = capacityPath;
+  process.env.TELEPATHOS_LANES = capacityPath;
   const capacityRegistry = loadLanes();
   for (let index = 1; index < MAX_LANE_COUNT; index++) {
     createLane(capacityRegistry, laneNameAtCapacity(index));
@@ -188,7 +190,7 @@ try {
 
   const overCapacityRegistry = structuredClone(capacityRegistry);
   overCapacityRegistry.lanes.push({
-    id: "telepathy:repo:overflow",
+    id: "telepathos:repo:overflow",
     name: "overflow",
     createdAt: "2026-01-01T00:00:00.000Z",
     lastActive: "2026-01-01T00:00:00.000Z",
@@ -218,15 +220,15 @@ try {
   const capacityApiSource = [
     'import { loadLanes } from "./dist/lanes.js";',
     'import { startApiServer } from "./dist/api.js";',
-    'startApiServer(loadLanes(), Number(process.env.TELEPATHY_API_PORT), "127.0.0.1");',
+    'startApiServer(loadLanes(), Number(process.env.TELEPATHOS_API_PORT), "127.0.0.1");',
   ].join("\n");
   capacityApiChild = spawn(process.execPath, ["--input-type=module", "--eval", capacityApiSource], {
     env: {
       ...process.env,
-      TELEPATHY_LANES: capacityPath,
-      TELEPATHY_API_PORT: "8796",
-      TELEPATHY_HERMES_URL: "",
-      TELEPATHY_TOKEN: "",
+      TELEPATHOS_LANES: capacityPath,
+      TELEPATHOS_API_PORT: "8796",
+      TELEPATHOS_HERMES_URL: "",
+      TELEPATHOS_TOKEN: "",
     },
     stdio: "ignore",
   });
@@ -264,13 +266,13 @@ try {
     capacityApiChild.kill("SIGTERM");
     await new Promise((resolve) => capacityApiChild.once("exit", resolve));
   }
-  if (lanePathBeforeCapacityTests === undefined) delete process.env.TELEPATHY_LANES;
-  else process.env.TELEPATHY_LANES = lanePathBeforeCapacityTests;
+  if (lanePathBeforeCapacityTests === undefined) delete process.env.TELEPATHOS_LANES;
+  else process.env.TELEPATHOS_LANES = lanePathBeforeCapacityTests;
   rmSync(capacityRoot, { recursive: true, force: true });
 }
 const beforeInvalidSwitch = structuredClone(reg2);
 let rejectedInvalidSwitch = false;
-try { switchLane(reg2, 'telepathy:repo:bad"quote'); } catch { rejectedInvalidSwitch = true; }
+try { switchLane(reg2, 'telepathos:repo:bad"quote'); } catch { rejectedInvalidSwitch = true; }
 check("invalid switch is rejected without mutation", rejectedInvalidSwitch &&
   JSON.stringify(reg2) === JSON.stringify(beforeInvalidSwitch));
 for (const [label, name] of [
@@ -294,9 +296,9 @@ const invalidMetaNames = [
   ["Unicode blank", "\u00a0\u2007\u202f\u3000", "lane name must not be blank"],
   ["Unicode slugless", "💥", "lane name is too long to produce a valid lane identifier"],
 ];
-const directMetaPath = "/tmp/telepathy-direct-meta-invalid-name.json";
+const directMetaPath = "/tmp/telepathos-direct-meta-invalid-name.json";
 try { rmSync(directMetaPath); } catch {}
-process.env.TELEPATHY_LANES = directMetaPath;
+process.env.TELEPATHOS_LANES = directMetaPath;
 const directMetaRegistry = loadLanes();
 saveLanes(directMetaRegistry);
 for (const [label, name, expected] of invalidMetaNames) {
@@ -310,23 +312,23 @@ for (const [label, name, expected] of invalidMetaNames) {
     readFileSync(directMetaPath, "utf8") === beforeDisk);
 }
 try { rmSync(directMetaPath); } catch {}
-process.env.TELEPATHY_LANES = "/tmp/telepathy-test-lanes.json";
+process.env.TELEPATHOS_LANES = "/tmp/telepathos-test-lanes.json";
 
 // A first write into a nested state path must sync the parent of every
 // directory created by recursive mkdir, followed by the final directory
 // sync after the snapshot rename.
-const originalLanePath = process.env.TELEPATHY_LANES;
-const nestedLaneRoot = mkdtempSync("/tmp/telepathy-node-nested-lanes-");
+const originalLanePath = process.env.TELEPATHOS_LANES;
+const nestedLaneRoot = mkdtempSync("/tmp/telepathos-node-nested-lanes-");
 const nestedLanePath = join(nestedLaneRoot, "created", "state", "lanes.json");
 const nestedDirectorySyncs = [];
-process.env.TELEPATHY_LANES = nestedLanePath;
+process.env.TELEPATHOS_LANES = nestedLanePath;
 setLaneDirectorySyncHookForTests((syncedPath) => nestedDirectorySyncs.push(syncedPath));
 try {
   saveLanes(loadLanes());
 } finally {
   setLaneDirectorySyncHookForTests(null);
-  if (originalLanePath === undefined) delete process.env.TELEPATHY_LANES;
-  else process.env.TELEPATHY_LANES = originalLanePath;
+  if (originalLanePath === undefined) delete process.env.TELEPATHOS_LANES;
+  else process.env.TELEPATHOS_LANES = originalLanePath;
   rmSync(nestedLaneRoot, { recursive: true, force: true });
 }
 check("nested lane snapshots sync every created directory parent", JSON.stringify(nestedDirectorySyncs) === JSON.stringify([
@@ -349,19 +351,19 @@ check("lane snapshots handle short writes", shortWriteCalls > 1 &&
 
 // malformed authoritative files must fail closed instead of turning missing
 // fields into the literal string "undefined".
-writeFileSync("/tmp/telepathy-test-lanes.json", JSON.stringify({
-  lanes: [{ id: "telepathy:direct", name: "direct", created_at: "", last_active: "" }],
-  active_id: "telepathy:missing",
-  previous_id: "telepathy:direct",
+writeFileSync("/tmp/telepathos-test-lanes.json", JSON.stringify({
+  lanes: [{ id: "telepathos:direct", name: "direct", created_at: "", last_active: "" }],
+  active_id: "telepathos:missing",
+  previous_id: "telepathos:direct",
 }));
 let rejectedMalformed = false;
 try { loadLanes(); } catch { rejectedMalformed = true; }
 check("reject malformed lane registry", rejectedMalformed);
 
-writeFileSync("/tmp/telepathy-test-lanes.json", JSON.stringify({
-  lanes: [{ id: 'telepathy:repo:bad"quote', name: "bad", created_at: "now", last_active: "now" }],
-  active_id: 'telepathy:repo:bad"quote',
-  previous_id: 'telepathy:repo:bad"quote',
+writeFileSync("/tmp/telepathos-test-lanes.json", JSON.stringify({
+  lanes: [{ id: 'telepathos:repo:bad"quote', name: "bad", created_at: "now", last_active: "now" }],
+  active_id: 'telepathos:repo:bad"quote',
+  previous_id: 'telepathos:repo:bad"quote',
 }));
 let rejectedInvalidId = false;
 try { loadLanes(); } catch { rejectedInvalidId = true; }
@@ -370,11 +372,11 @@ check("reject invalid persisted lane ID", rejectedInvalidId);
 // The Node and Rust owners apply exactly the same durable metadata contract:
 // bounded names, only canonical writer timestamp forms, and JSON-safe epoch
 // values. Invalid snapshots are hard failures and neither path repairs them.
-const metadataRoot = mkdtempSync("/tmp/telepathy-node-lane-metadata-");
+const metadataRoot = mkdtempSync("/tmp/telepathos-node-lane-metadata-");
 const metadataPath = join(metadataRoot, "lanes.json");
-const previousMetadataPath = process.env.TELEPATHY_LANES;
+const previousMetadataPath = process.env.TELEPATHOS_LANES;
 try {
-  process.env.TELEPATHY_LANES = metadataPath;
+  process.env.TELEPATHOS_LANES = metadataPath;
   for (const name of [
     "a".repeat(MAX_LANE_NAME_UTF8_BYTES),
     "é".repeat(MAX_LANE_NAME_UTF8_BYTES / 2),
@@ -410,19 +412,19 @@ try {
 
   const acceptedSnapshot = JSON.stringify({
     lanes: [{
-      id: "telepathy:direct",
+      id: "telepathos:direct",
       name: "é".repeat(MAX_LANE_NAME_UTF8_BYTES / 2),
       created_at: "epoch-ms:9007199254740991",
       last_active: "2024-02-29T23:59:59.999Z",
       interactions: Number.MAX_SAFE_INTEGER,
     }],
-    active_id: "telepathy:direct",
-    previous_id: "telepathy:direct",
+    active_id: "telepathos:direct",
+    previous_id: "telepathos:direct",
   });
   writeFileSync(metadataPath, acceptedSnapshot);
   const accepted = loadLanes();
   check("bounded multibyte metadata snapshot reloads exactly", JSON.stringify(accepted.lanes[0]) === JSON.stringify({
-    id: "telepathy:direct",
+    id: "telepathos:direct",
     name: "é".repeat(MAX_LANE_NAME_UTF8_BYTES / 2),
     createdAt: "epoch-ms:9007199254740991",
     lastActive: "2024-02-29T23:59:59.999Z",
@@ -437,13 +439,13 @@ try {
 
   const invalidRestartSnapshot = JSON.stringify({
     lanes: [{
-      id: "telepathy:direct",
+      id: "telepathos:direct",
       name: "direct",
       created_at: "epoch-ms:9007199254740992",
       last_active: "2024-01-01T00:00:00.000Z",
     }],
-    active_id: "telepathy:direct",
-    previous_id: "telepathy:direct",
+    active_id: "telepathos:direct",
+    previous_id: "telepathos:direct",
   });
   writeFileSync(metadataPath, invalidRestartSnapshot);
   let rejectedInvalidMetadataRestart = false;
@@ -451,8 +453,8 @@ try {
   check("out-of-range timestamp snapshot hard-rejects on restart without overwrite",
     rejectedInvalidMetadataRestart && readFileSync(metadataPath, "utf8") === invalidRestartSnapshot);
 } finally {
-  if (previousMetadataPath === undefined) delete process.env.TELEPATHY_LANES;
-  else process.env.TELEPATHY_LANES = previousMetadataPath;
+  if (previousMetadataPath === undefined) delete process.env.TELEPATHOS_LANES;
+  else process.env.TELEPATHOS_LANES = previousMetadataPath;
   rmSync(metadataRoot, { recursive: true, force: true });
 }
 
@@ -460,16 +462,16 @@ try {
 // snapshot when a synchronous save fails after a mutation. Replacing the
 // registry directory with a file makes mkdirSync fail deterministically while
 // keeping the child process's already-loaded registry available for GETs.
-const apiFaultDir = "/tmp/telepathy-api-transaction";
-const apiFaultBackupDir = "/tmp/telepathy-api-transaction-backup";
+const apiFaultDir = "/tmp/telepathos-api-transaction";
+const apiFaultBackupDir = "/tmp/telepathos-api-transaction-backup";
 const apiFaultPath = `${apiFaultDir}/lanes.json`;
 const apiFaultRegistry = {
   lanes: [
-    { id: "telepathy:direct", name: "direct", created_at: "2020-01-01T00:00:00.000Z", last_active: "2020-01-01T00:00:00.000Z" },
-    { id: "telepathy:repo:second", name: "second", created_at: "2020-01-02T00:00:00.000Z", last_active: "2020-01-02T00:00:00.000Z" },
+    { id: "telepathos:direct", name: "direct", created_at: "2020-01-01T00:00:00.000Z", last_active: "2020-01-01T00:00:00.000Z" },
+    { id: "telepathos:repo:second", name: "second", created_at: "2020-01-02T00:00:00.000Z", last_active: "2020-01-02T00:00:00.000Z" },
   ],
-  active_id: "telepathy:direct",
-  previous_id: "telepathy:direct",
+  active_id: "telepathos:direct",
+  previous_id: "telepathos:direct",
 };
 let apiChild;
 try {
@@ -480,16 +482,16 @@ try {
   apiChild = spawn(process.execPath, ["dist/index.js"], {
     env: {
       ...process.env,
-      TELEPATHY_LANES: apiFaultPath,
-      TELEPATHY_PORT: "8793",
-      TELEPATHY_API_PORT: "8794",
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_HOST: "127.0.0.1",
-      TELEPATHY_HERMES_URL: "",
-      TELEPATHY_TOKEN: "",
-      TELEPATHY_TLS_CERT: "",
-      TELEPATHY_TLS_KEY: "",
-      TELEPATHY_STT: "echo",
+      TELEPATHOS_LANES: apiFaultPath,
+      TELEPATHOS_PORT: "8793",
+      TELEPATHOS_API_PORT: "8794",
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_HOST: "127.0.0.1",
+      TELEPATHOS_HERMES_URL: "",
+      TELEPATHOS_TOKEN: "",
+      TELEPATHOS_TLS_CERT: "",
+      TELEPATHOS_TLS_KEY: "",
+      TELEPATHOS_STT: "echo",
     },
     stdio: "ignore",
   });
@@ -523,10 +525,10 @@ try {
   };
 
   await checkRejectedWithoutMutation("active missing ID", "/api/lanes/active", {}, 400);
-  await checkRejectedWithoutMutation("active malformed ID", "/api/lanes/active", { id: 'telepathy:repo:bad"quote' }, 400);
-  await checkRejectedWithoutMutation("active unknown ID", "/api/lanes/active", { id: "telepathy:missing" }, 404);
+  await checkRejectedWithoutMutation("active malformed ID", "/api/lanes/active", { id: 'telepathos:repo:bad"quote' }, 400);
+  await checkRejectedWithoutMutation("active unknown ID", "/api/lanes/active", { id: "telepathos:missing" }, 404);
   await checkRejectedWithoutMutation("touch missing ID", "/api/lanes/touch", {}, 400);
-  await checkRejectedWithoutMutation("touch unknown ID", "/api/lanes/touch", { id: "telepathy:missing" }, 404);
+  await checkRejectedWithoutMutation("touch unknown ID", "/api/lanes/touch", { id: "telepathos:missing" }, 404);
   await checkRejectedWithoutMutation("create missing name", "/api/lanes", {}, 400);
   await checkRejectedWithoutMutation("create non-string name", "/api/lanes", { name: null }, 400);
   await checkRejectedWithoutMutation("create ASCII-blank name", "/api/lanes", { name: " \t\n" }, 400);
@@ -534,11 +536,11 @@ try {
   await checkRejectedWithoutMutation("create slugless name", "/api/lanes", { name: "!!!" }, 400);
   await checkRejectedWithoutMutation("create oversized name", "/api/lanes", { name: "x".repeat(114) }, 400);
 
-  const successfulActive = await post("/api/lanes/active", { id: "telepathy:repo:second" });
+  const successfulActive = await post("/api/lanes/active", { id: "telepathos:repo:second" });
   check("active succeeds after admission", successfulActive.status === 200);
   const successfulCreate = await post("/api/lanes", { name: "created success" });
   check("create succeeds after admission", successfulCreate.status === 200);
-  const successfulTouch = await post("/api/lanes/touch", { id: "telepathy:repo:created-success" });
+  const successfulTouch = await post("/api/lanes/touch", { id: "telepathos:repo:created-success" });
   check("touch succeeds after admission", successfulTouch.status === 200);
   baseline = await state();
 
@@ -556,9 +558,9 @@ try {
   };
 
   check("transactional API baseline loaded", JSON.stringify(await state()) === JSON.stringify(baseline));
-  await checkRollback("switch active lane", "/api/lanes/active", { id: "telepathy:repo:second" });
+  await checkRollback("switch active lane", "/api/lanes/active", { id: "telepathos:repo:second" });
   await checkRollback("create lane", "/api/lanes", { name: "third" });
-  await checkRollback("touch lane", "/api/lanes/touch", { id: "telepathy:repo:second" });
+  await checkRollback("touch lane", "/api/lanes/touch", { id: "telepathos:repo:second" });
 } finally {
   if (apiChild && apiChild.exitCode === null) {
     apiChild.kill("SIGTERM");
@@ -570,7 +572,7 @@ try {
 
 // Exercise the same post-rename fault seam through HTTP. This child owns its
 // latch, so the direct registry tests below remain independent.
-const apiAmbiguityDir = "/tmp/telepathy-api-ambiguity";
+const apiAmbiguityDir = "/tmp/telepathos-api-ambiguity";
 const apiAmbiguityPath = `${apiAmbiguityDir}/lanes.json`;
 let ambiguityApiChild;
 try {
@@ -581,15 +583,15 @@ try {
     'import { loadLanes, setAfterRenameHookForTests } from "./dist/lanes.js";',
     'import { startApiServer } from "./dist/api.js";',
     'setAfterRenameHookForTests(() => { throw new Error("injected parent fsync failure"); });',
-    'startApiServer(loadLanes(), Number(process.env.TELEPATHY_API_PORT), "127.0.0.1");',
+    'startApiServer(loadLanes(), Number(process.env.TELEPATHOS_API_PORT), "127.0.0.1");',
   ].join("\n");
   ambiguityApiChild = spawn(process.execPath, ["--input-type=module", "--eval", ambiguityServer], {
     env: {
       ...process.env,
-      TELEPATHY_LANES: apiAmbiguityPath,
-      TELEPATHY_API_PORT: "8795",
-      TELEPATHY_HERMES_URL: "",
-      TELEPATHY_TOKEN: "",
+      TELEPATHOS_LANES: apiAmbiguityPath,
+      TELEPATHOS_API_PORT: "8795",
+      TELEPATHOS_HERMES_URL: "",
+      TELEPATHOS_TOKEN: "",
     },
     stdio: "ignore",
   });
@@ -613,16 +615,16 @@ try {
   });
   const ambiguityState = async () => (await fetch(`${ambiguityApiBase}/api/state`)).json();
 
-  const ambiguousActive = await ambiguityPost("/api/lanes/active", { id: "telepathy:repo:second" });
+  const ambiguousActive = await ambiguityPost("/api/lanes/active", { id: "telepathos:repo:second" });
   check("active post-rename failure is HTTP 503", ambiguousActive.status === 503);
   const afterAmbiguousActive = await ambiguityState();
   check("active post-rename failure preserves the renamed registry in memory",
-    afterAmbiguousActive.activeId === "telepathy:repo:second");
+    afterAmbiguousActive.activeId === "telepathos:repo:second");
   const afterAmbiguousSnapshot = readFileSync(apiAmbiguityPath, "utf8");
   check("active post-rename failure leaves the renamed snapshot on disk",
-    JSON.parse(afterAmbiguousSnapshot).active_id === "telepathy:repo:second");
+    JSON.parse(afterAmbiguousSnapshot).active_id === "telepathos:repo:second");
 
-  const latchedTouch = await ambiguityPost("/api/lanes/touch", { id: "telepathy:repo:second" });
+  const latchedTouch = await ambiguityPost("/api/lanes/touch", { id: "telepathos:repo:second" });
   check("touch while persistence is latched is HTTP 503", latchedTouch.status === 503);
   check("latched touch rolls back the attempted in-memory mutation",
     JSON.stringify(await ambiguityState()) === JSON.stringify(afterAmbiguousActive));
@@ -631,7 +633,7 @@ try {
 
   for (const [label, path, body, expectedStatus] of [
     ["latched malformed touch", "/api/lanes/touch", {}, 400],
-    ["latched unknown touch", "/api/lanes/touch", { id: "telepathy:missing" }, 404],
+    ["latched unknown touch", "/api/lanes/touch", { id: "telepathos:missing" }, 404],
     ["latched blank create", "/api/lanes", { name: "\u00a0\u2007" }, 400],
   ]) {
     const response = await ambiguityPost(path, body);
@@ -651,9 +653,9 @@ try {
 // A rename makes the new filename observable before the directory fsync.  A
 // failure after that point is ambiguous: preserve the new in-memory snapshot
 // and refuse subsequent writes rather than letting stale state overwrite it.
-const ambiguityPath = "/tmp/telepathy-lane-post-rename-ambiguity.json";
+const ambiguityPath = "/tmp/telepathos-lane-post-rename-ambiguity.json";
 try { rmSync(ambiguityPath); } catch {}
-process.env.TELEPATHY_LANES = ambiguityPath;
+process.env.TELEPATHOS_LANES = ambiguityPath;
 const ambiguityRegistry = loadLanes();
 const ambiguityLane = createLane(ambiguityRegistry, "ambiguous commit");
 saveLanes(ambiguityRegistry);
@@ -686,9 +688,9 @@ check("latched lane write rolls back its attempted mutation",
   JSON.stringify(ambiguityRegistry) === JSON.stringify(afterAmbiguousSave));
 try { rmSync(ambiguityPath); } catch {}
 
-const toolMetaPath = "/tmp/telepathy-tool-invalid-name.json";
+const toolMetaPath = "/tmp/telepathos-tool-invalid-name.json";
 try { rmSync(toolMetaPath); } catch {}
-process.env.TELEPATHY_LANES = toolMetaPath;
+process.env.TELEPATHOS_LANES = toolMetaPath;
 const toolMetaRegistry = loadLanes();
 writeFileSync(toolMetaPath, JSON.stringify({
   lanes: toolMetaRegistry.lanes.map((lane) => ({
@@ -717,9 +719,9 @@ console.log(failures === 0 ? "META TESTS PASS" : `${failures} FAILURES`);
 process.exit(failures ? 1 : 0);
 
 // 6. agent-facing lane API
-process.env.TELEPATHY_LANES = "/tmp/tp-api-lanes.json";
-process.env.TELEPATHY_PORT = "8791";
-process.env.TELEPATHY_API_PORT = "8792";
+process.env.TELEPATHOS_LANES = "/tmp/tp-api-lanes.json";
+process.env.TELEPATHOS_PORT = "8791";
+process.env.TELEPATHOS_API_PORT = "8792";
 try { rmSync("/tmp/tp-api-lanes.json"); } catch {}
 const srv = spawn("node", ["dist/index.js"], { env: process.env, stdio: "ignore" });
 await new Promise((r) => setTimeout(r, 1200));
@@ -730,7 +732,7 @@ check("api: state has direct lane", st.lanes.length === 1 && st.active === "dire
 await post("/api/lanes", { name: "kerchunk" });
 const st2 = await (await fetch(base + "/api/state")).json();
 check("api: create+switch via tools", st2.active === "kerchunk" && st2.lanes.length === 2);
-await post("/api/lanes/active", { id: "telepathy:direct" });
+await post("/api/lanes/active", { id: "telepathos:direct" });
 const st3 = await (await fetch(base + "/api/state")).json();
 check("api: switch via tools", st3.active === "direct");
 srv.kill();
@@ -739,11 +741,11 @@ srv.kill();
 import { executeTool, metaTools } from "./dist/meta-agent.js";
 const reg3 = {
   lanes: [
-    { id: "telepathy:direct", name: "direct", createdAt: "", lastActive: "", interactions: 5 },
-    { id: "telepathy:repo:x", name: "x", createdAt: "", lastActive: "" },
+    { id: "telepathos:direct", name: "direct", createdAt: "", lastActive: "", interactions: 5 },
+    { id: "telepathos:repo:x", name: "x", createdAt: "", lastActive: "" },
   ],
-  activeId: "telepathy:direct",
-  previousId: "telepathy:direct",
+  activeId: "telepathos:direct",
+  previousId: "telepathos:direct",
 };
 check("tool: list_lanes", executeTool(reg3, "list_lanes", {}).includes("(ACTIVE)"));
 check("tool: switch fuzzy", executeTool(reg3, "switch_lane", { name: "x" }).includes("now x"));

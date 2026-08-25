@@ -1,4 +1,4 @@
-# telepathy
+# telepathos
 
 Control coding agents by voice, through open-ear earbuds.
 
@@ -33,7 +33,7 @@ PCM16 mono @ 16 kHz from the mic.
 
 Client → server:
 - `{"type":"hello","device":"opendots2","installation_id":"<stable opaque id>"}` — required first frame after connect; `installation_id` is a persisted per-installation owner ID (1–128 nonblank, non-control characters), never the human device label. The bridge drops every other client frame until it is accepted and returns `ready`.
-- `{"type":"lane","id":"telepathy:direct","revision":7,"turn_token":"<uuid>"}` — starts a capture turn before any mic audio. `turn_token` is a fresh, opaque client value for each capture.
+- `{"type":"lane","id":"telepathos:direct","revision":7,"turn_token":"<uuid>"}` — starts a capture turn before any mic audio. `turn_token` is a fresh, opaque client value for each capture.
 - binary — mic audio, accepted only after a token-bound lane frame
 - `{"type":"utterance_end","turn_token":"<uuid>"}` — client-side end-of-speech (optional if server VAD is on)
 - `{"type":"meta_mode","turn_token":"<uuid>"}` — directs that same capture turn to the meta agent
@@ -60,10 +60,10 @@ Server → client:
 - `{"type":"listening"}` / `{"type":"speech_start"}` / `{"type":"utterance","samples":N}` — VAD state
 - `{"type":"stt","text":"...","turn_token":"<uuid>","interaction_id":"i-42",...}` — transcript;
   `confidence` present only when the backend reports it (faster-whisper), `repo` when
-  `TELEPATHY_REPO` is set
+  `TELEPATHOS_REPO` is set
 - `{"type":"agent_delta","text":"...","turn_token":"<uuid>","interaction_id":"i-42"}` / `{"type":"agent_end","text":"<complete reply>","turn_token":"<uuid>","interaction_id":"i-42"}` — streamed text reply. A complete reply is limited to 512 KiB UTF-8 bytes; Node enforces the bound while streaming and Android enforces it independently for deltas and terminal frames. Android's `LocalAnnouncer` performs local TTS on the complete `agent_end` text. Receipt-bearing `agent_end` frames retain the complete text durably and are replayed before `ready` until Android proves it stored their receipt.
 - `{"type":"reply_received",...}` — the bridge durably recorded Android's replay receipt, so playback or saved-text recovery may now advance that receipt
-- `{"type":"reply_acknowledged",...}` — the bridge durably recorded that telepathyd consumed an exact reply delivery. The handset persists its terminal retry state before sending `reply_ack_retire`.
+- `{"type":"reply_acknowledged",...}` — the bridge durably recorded that telepathosd consumed an exact reply delivery. The handset persists its terminal retry state before sending `reply_ack_retire`.
 - `{"type":"reply_ack_retired",...}` — the bridge durably removed that completed delivery binding. Only then may the handset remove its terminal retry record.
 - `{"type":"listening"}` — server VAD is live again after an interaction
 - `{"type":"error","message":"..."}`
@@ -84,16 +84,16 @@ descriptor contract is v3. These are hard-cutover contracts; there is no
 compatibility mode for earlier snapshots.
 
 Node v8 retains up to 64 live receipt bindings and 64 exact terminal tombstones
-separately. A consumed binding older than `TELEPATHY_REPLY_ACK_CONSUMED_RETENTION_MS`
+separately. A consumed binding older than `TELEPATHOS_REPLY_ACK_CONSUMED_RETENTION_MS`
 is replaced by a tombstone so the original installation can send a late exact
 `reply_ack` after reconnect; tombstones are bounded by
-`TELEPATHY_REPLY_ACK_TOMBSTONE_RETENTION_MS` (default seven days) and are removed
+`TELEPATHOS_REPLY_ACK_TOMBSTONE_RETENTION_MS` (default seven days) and are removed
 by exact `reply_ack_retire` or expiry. Tombstones never rotate owners or call
-telepathyd again.
+telepathosd again.
 
 Every Node durable reply binding, terminal tombstone, and interaction-outbox
 record also carries a `target_identity`: a SHA-256 digest of the normalized
-`TELEPATHY_HERMES_URL` and effective `TELEPATHY_TOKEN` auth configuration. The
+`TELEPATHOS_HERMES_URL` and effective `TELEPATHOS_TOKEN` auth configuration. The
 token is never persisted. URL changes, credential rotation, and switching to or
 from the local/unconfigured target fail closed at startup and at runtime; old
 rows stay on disk and are only replayed, acknowledged, retired, or flushed
@@ -104,8 +104,8 @@ the shared opaque-ID grammar to interaction IDs.
 
 ## Lane registry contract
 
-Node and `telepathyd` share a hard maximum of **256 total lanes**, including
-`telepathy:direct`. The bound is enforced before a new lane can mutate memory
+Node and `telepathosd` share a hard maximum of **256 total lanes**, including
+`telepathos:direct`. The bound is enforced before a new lane can mutate memory
 or replace `lanes.json`, and on every snapshot load and save; over-cap snapshots
 are hard-rejected without migration or rewrite. Existing lanes remain usable at
 capacity. A request for a new lane at capacity is a permanent `409` error with
@@ -131,7 +131,7 @@ migration or compatibility rewrite. Hermes database titles are not persisted,
 but state enrichment truncates them on UTF-8 boundaries to 256 bytes and 128
 Unicode scalar values. With 256 lanes, the maximum permitted metadata and
 worst-case JSON escaping plus title enrichment serialize below 512 KiB, leaving
-at least a 2× margin below the 1 MiB Node-to-`telepathyd` state-response cap.
+at least a 2× margin below the 1 MiB Node-to-`telepathosd` state-response cap.
 
 ## Delivery semantics
 
@@ -139,14 +139,14 @@ at least a 2× margin below the 1 MiB Node-to-`telepathyd` state-response cap.
 "Message incoming from {lane}: …" spoken immediately. Deferred to the next
 listening phase if you're mid-interaction.
 
-**Disconnected** (service off): deliveries sit in telepathyd's durable inbox,
+**Disconnected** (service off): deliveries sit in telepathosd's durable inbox,
 read with timestamps at the first meta entry (double-pinch).
 
 ## Push (server → phone)
 
 Cron results and async agent replies ring the phone via [ntfy](https://ntfy.sh):
-`TELEPATHY_NTFY_URL=https://ntfy.sh/<private-topic>` (optionally
-`TELEPATHY_NTFY_TOKEN`). Subscribe to the topic in the ntfy app — deliveries
+`TELEPATHOS_NTFY_URL=https://ntfy.sh/<private-topic>` (optionally
+`TELEPATHOS_NTFY_TOKEN`). Subscribe to the topic in the ntfy app — deliveries
 arrive as Android notifications instantly; pinch to hear them.
 
 ## Auth model
@@ -164,13 +164,13 @@ tailnet; no application auth. See `deploy/AUTH.md` for deployment, TLS via
       closed after `listening` — zero radio/mic power between interactions)
 - [x] Typed interaction state machine (server-authoritative, phase broadcasts)
 - [x] Steering agent: LLM tool-calling loop over the lane API, catches grammar
-      misses (`TELEPATHY_META_MODEL` to enable); per-lane interaction stats
+      misses (`TELEPATHOS_META_MODEL` to enable); per-lane interaction stats
 - [ ] Piper TTS on the 3090
 - [ ] Hardware validation: pinch mapping, SCO routing, taps-during-SCO, carrier NAT
 
 ## Hermes relay contract (v3)
 
-`telepathyd`'s authenticated Hermes gateway relay uses newline-delimited JSON
+`telepathosd`'s authenticated Hermes gateway relay uses newline-delimited JSON
 over its WebSocket. Each accepted gateway action receives a durable result:
 
 Inbound voice turns use an explicit application handoff. The relay writes the
@@ -253,9 +253,9 @@ versions are rejected at startup.
 
 ## Secure remote deployment
 
-When `TELEPATHY_TOKEN` is set and a phone connects over a non-loopback
+When `TELEPATHOS_TOKEN` is set and a phone connects over a non-loopback
 interface, run both endpoints with TLS. The bridge accepts PEM paths through
-`TELEPATHY_TLS_CERT` and `TELEPATHY_TLS_KEY`; telepathyd uses the same variables
+`TELEPATHOS_TLS_CERT` and `TELEPATHOS_TLS_KEY`; telepathosd uses the same variables
 for its HTTPS lane API. Configure the phone with `wss://...:8787` and
 `https://...:8790`. The daemon rejects a token-authenticated non-loopback bind
 without the certificate pair, and the Android client refuses to send a token
@@ -266,7 +266,7 @@ on loopback only. Set an explicit token, TLS certificate pair, and non-loopback
 bind before exposing either endpoint to a network.
 
 Remote interaction activity records are durably retried by the bridge and
-deduplicated by `telepathyd` for seven days. A retry older than that is rejected
+deduplicated by `telepathosd` for seven days. A retry older than that is rejected
 without incrementing the lane count; the bounded ledger refuses new records at
 capacity rather than silently double-counting or dropping history.
 

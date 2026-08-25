@@ -17,23 +17,23 @@ const {
   MAX_INTERACTION_ID_BYTES,
 } = await import("./dist/interaction-outbox.js");
 const { ReplyAckStore, ReplyAckStoreCapacityError } = await import("./dist/reply-ack-store.js");
-const { currentTelepathydTargetIdentity } = await import("./dist/target-scope.js");
-const directory = await mkdtemp(join(tmpdir(), "telepathy-interaction-outbox-"));
+const { currentTelepathosdTargetIdentity } = await import("./dist/target-scope.js");
+const directory = await mkdtemp(join(tmpdir(), "telepathos-interaction-outbox-"));
 const path = join(directory, "outbox.json");
 try {
-  const targetIdentity = currentTelepathydTargetIdentity();
+  const targetIdentity = currentTelepathosdTargetIdentity();
   const legacyOutboxPath = join(directory, "legacy-v2.json");
   await writeFile(legacyOutboxPath, JSON.stringify({ version: 2, records: [] }));
   assert.throws(() => new InteractionOutbox(legacyOutboxPath, 2), /expected v3 snapshot object/);
   // Restart/load must reject every malformed lane spelling without changing
   // the snapshot on disk, and admission must reject it before reservation.
   for (const [label, laneId] of [
-    ["spaces", "telepathy: direct"],
-    ["controls", "telepathy:repo:\u0001control"],
-    ["quotes", 'telepathy:repo:quote"'],
-    ["backslashes", "telepathy:repo:backslash\\"],
-    ["oversize", `telepathy:repo:${"a".repeat(128)}`],
-    ["unicode", "telepathy:repo:é"],
+    ["spaces", "telepathos: direct"],
+    ["controls", "telepathos:repo:\u0001control"],
+    ["quotes", 'telepathos:repo:quote"'],
+    ["backslashes", "telepathos:repo:backslash\\"],
+    ["oversize", `telepathos:repo:${"a".repeat(128)}`],
+    ["unicode", "telepathos:repo:é"],
   ]) {
     const invalidPath = join(directory, `invalid-${label}.json`);
     const original = JSON.stringify({
@@ -52,12 +52,12 @@ try {
   }
   const admission = new InteractionOutbox(join(directory, "invalid-admission.json"), 2);
   for (const laneId of [
-    "telepathy: direct",
-    "telepathy:repo:\u0001control",
-    'telepathy:repo:quote"',
-    "telepathy:repo:backslash\\",
-    `telepathy:repo:${"a".repeat(128)}`,
-    "telepathy:repo:é",
+    "telepathos: direct",
+    "telepathos:repo:\u0001control",
+    'telepathos:repo:quote"',
+    "telepathos:repo:backslash\\",
+    `telepathos:repo:${"a".repeat(128)}`,
+    "telepathos:repo:é",
   ]) {
     assert.throws(() => admission.reserve({
       laneId,
@@ -67,7 +67,7 @@ try {
   }
   assert.deepEqual(admission.pending(), []);
   assert.throws(() => admission.reserve({
-    laneId: "telepathy:direct",
+    laneId: "telepathos:direct",
     interactionId: "x".repeat(MAX_INTERACTION_ID_LENGTH + 1),
     interactionCreatedAtMs: 1_700_000_000_100,
   }), /malformed entry/);
@@ -80,7 +80,7 @@ try {
     version: 3,
     records: Array.from({ length: 3 }, (_, index) => ({
       target_identity: targetIdentity,
-      lane_id: "telepathy:direct",
+      lane_id: "telepathos:direct",
       interaction_id: `i-oversized-snapshot-${index}`,
       interaction_created_at_ms: 1_700_000_000_200 + index,
       state: "pending",
@@ -96,7 +96,7 @@ try {
     version: 3,
     records: [{
       target_identity: targetIdentity,
-      lane_id: "telepathy:direct",
+      lane_id: "telepathos:direct",
       interaction_id: "é".repeat(Math.ceil(MAX_INTERACTION_ID_BYTES / 2) + 1),
       interaction_created_at_ms: 1_700_000_000_300,
       state: "pending",
@@ -120,14 +120,14 @@ try {
       records: [
         {
           target_identity: targetIdentity,
-          lane_id: "telepathy:direct",
+          lane_id: "telepathos:direct",
           interaction_id: "i-duplicate-restart",
           interaction_created_at_ms: 1_700_000_000_500,
           state: "reserved",
         },
         {
           target_identity: targetIdentity,
-          lane_id: "telepathy:direct",
+          lane_id: "telepathos:direct",
           interaction_id: "i-duplicate-restart",
           interaction_created_at_ms: duplicateTimestamp,
           state: "reserved",
@@ -152,28 +152,28 @@ try {
     records: [
       {
         target_identity: targetIdentity,
-        lane_id: "telepathy:direct",
+        lane_id: "telepathos:direct",
         interaction_id: "i-cross-lane-same-time",
         interaction_created_at_ms: 1_700_000_000_600,
         state: "pending",
       },
       {
         target_identity: targetIdentity,
-        lane_id: "telepathy:other",
+        lane_id: "telepathos:other",
         interaction_id: "i-cross-lane-same-time",
         interaction_created_at_ms: 1_700_000_000_600,
         state: "pending",
       },
       {
         target_identity: targetIdentity,
-        lane_id: "telepathy:direct",
+        lane_id: "telepathos:direct",
         interaction_id: "i-cross-lane-different-time",
         interaction_created_at_ms: 1_700_000_000_601,
         state: "pending",
       },
       {
         target_identity: targetIdentity,
-        lane_id: "telepathy:other",
+        lane_id: "telepathos:other",
         interaction_id: "i-cross-lane-different-time",
         interaction_created_at_ms: 1_700_000_000_602,
         state: "pending",
@@ -183,22 +183,22 @@ try {
   await writeFile(crossLanePath, JSON.stringify(crossLaneSnapshot));
   assert.deepEqual(new InteractionOutbox(crossLanePath, 4).pending(), [
     {
-      laneId: "telepathy:direct",
+      laneId: "telepathos:direct",
       interactionId: "i-cross-lane-same-time",
       interactionCreatedAtMs: 1_700_000_000_600,
     },
     {
-      laneId: "telepathy:other",
+      laneId: "telepathos:other",
       interactionId: "i-cross-lane-same-time",
       interactionCreatedAtMs: 1_700_000_000_600,
     },
     {
-      laneId: "telepathy:direct",
+      laneId: "telepathos:direct",
       interactionId: "i-cross-lane-different-time",
       interactionCreatedAtMs: 1_700_000_000_601,
     },
     {
-      laneId: "telepathy:other",
+      laneId: "telepathos:other",
       interactionId: "i-cross-lane-different-time",
       interactionCreatedAtMs: 1_700_000_000_602,
     },
@@ -207,35 +207,35 @@ try {
   const runtimePath = join(directory, "runtime-target-switch.json");
   const runtimeOutbox = new InteractionOutbox(runtimePath, 2);
   const runtimeRecord = {
-    laneId: "telepathy:direct",
+    laneId: "telepathos:direct",
     interactionId: "i-runtime-target-switch",
     interactionCreatedAtMs: 1_700_000_000_400,
   };
   runtimeOutbox.reserve(runtimeRecord);
   runtimeOutbox.promote(runtimeRecord);
   const beforeRuntimeSwitch = await readFile(runtimePath, "utf8");
-  const previousRuntimeUrl = process.env.TELEPATHY_HERMES_URL;
-  const previousRuntimeToken = process.env.TELEPATHY_TOKEN;
+  const previousRuntimeUrl = process.env.TELEPATHOS_HERMES_URL;
+  const previousRuntimeToken = process.env.TELEPATHOS_TOKEN;
   try {
-    process.env.TELEPATHY_HERMES_URL = "http://localhost:8791///";
-    process.env.TELEPATHY_TOKEN = "rotated-runtime-token";
+    process.env.TELEPATHOS_HERMES_URL = "http://localhost:8791///";
+    process.env.TELEPATHOS_TOKEN = "rotated-runtime-token";
     assert.throws(() => runtimeOutbox.pending(), InteractionOutboxBlockedError);
     assert.equal(await readFile(runtimePath, "utf8"), beforeRuntimeSwitch);
   } finally {
-    if (previousRuntimeUrl === undefined) delete process.env.TELEPATHY_HERMES_URL;
-    else process.env.TELEPATHY_HERMES_URL = previousRuntimeUrl;
-    if (previousRuntimeToken === undefined) delete process.env.TELEPATHY_TOKEN;
-    else process.env.TELEPATHY_TOKEN = previousRuntimeToken;
+    if (previousRuntimeUrl === undefined) delete process.env.TELEPATHOS_HERMES_URL;
+    else process.env.TELEPATHOS_HERMES_URL = previousRuntimeUrl;
+    if (previousRuntimeToken === undefined) delete process.env.TELEPATHOS_TOKEN;
+    else process.env.TELEPATHOS_TOKEN = previousRuntimeToken;
   }
 
   const first = new InteractionOutbox(path, 2);
   const interaction = {
-    laneId: "telepathy:direct",
+    laneId: "telepathos:direct",
     interactionId: "i-test-1",
     interactionCreatedAtMs: 1_700_000_000_000,
   };
   const abandoned = {
-    laneId: "telepathy:direct",
+    laneId: "telepathos:direct",
     interactionId: "i-test-abandoned",
     interactionCreatedAtMs: 1_700_000_000_001,
   };
@@ -277,7 +277,7 @@ try {
   const poisonedPath = join(directory, "post-rename-failure.json");
   const poisoned = new InteractionOutbox(poisonedPath, 2);
   const uncertain = {
-    laneId: "telepathy:direct",
+    laneId: "telepathos:direct",
     interactionId: "i-post-rename",
     interactionCreatedAtMs: 1_700_000_000_005,
   };
@@ -302,7 +302,7 @@ try {
   const recoveryPath = join(directory, "pre-rename-recovery.json");
   const recovering = new InteractionOutbox(recoveryPath, 2);
   const retried = {
-    laneId: "telepathy:direct",
+    laneId: "telepathos:direct",
     interactionId: "i-pre-rename-retry",
     interactionCreatedAtMs: 1_700_000_000_006,
   };
@@ -329,7 +329,7 @@ try {
   try {
     const nestedOutbox = new InteractionOutbox(nestedOutboxPath, 2);
     nestedOutbox.reserve({
-      laneId: "telepathy:direct",
+      laneId: "telepathos:direct",
       interactionId: "i-nested-state",
       interactionCreatedAtMs: 1_700_000_000_011,
     });
@@ -345,7 +345,7 @@ try {
   const cancelRecoveryPath = join(directory, "cancel-recovery.json");
   const cancelRecovery = new InteractionOutbox(cancelRecoveryPath, 1);
   const canceled = {
-    laneId: "telepathy:direct",
+    laneId: "telepathos:direct",
     interactionId: "i-cancel-pre-rename",
     interactionCreatedAtMs: 1_700_000_000_008,
   };
@@ -399,7 +399,7 @@ try {
   const shortWritePath = join(directory, "short-write.json");
   const shortWrite = new InteractionOutbox(shortWritePath, 2);
   const chunked = {
-    laneId: "telepathy:direct",
+    laneId: "telepathos:direct",
     interactionId: "i-short-write",
     interactionCreatedAtMs: 1_700_000_000_007,
   };
@@ -417,7 +417,7 @@ try {
   const binding = {
     targetIdentity,
     installationId: "interaction-outbox-installation",
-    laneId: "telepathy:direct",
+    laneId: "telepathos:direct",
     replyTo: "tp-1",
     afterSeq: 4,
     throughSeq: 6,

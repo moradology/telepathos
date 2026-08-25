@@ -13,7 +13,7 @@
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
-        android:label="Telepathy"
+        android:label="Telepathos"
         android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.AppCompat.Light">
 
@@ -28,13 +28,13 @@
 
         <!--
           The make-or-break component. If the Shokz pinch gesture launches the
-          phone's voice assistant and Telepathy is set as the default assistant
+          phone's voice assistant and Telepathos is set as the default assistant
           (Settings > Apps > Default apps > Digital assistant app), this service
           gets bound and onPrepareShow()/onShowSession() fire. That is the whole
           test: log it, beep, and put it on screen.
         -->
         <service
-            android:name=".TelepathyVoiceInteractionService"
+            android:name=".TelepathosVoiceInteractionService"
             android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION">
             <intent-filter>
@@ -51,7 +51,7 @@
 
         <!-- Launched by the system when an assist gesture reaches us -->
         <service
-            android:name=".TelepathyInteractionSessionService"
+            android:name=".TelepathosInteractionSessionService"
             android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
 
@@ -59,9 +59,9 @@
             android:name=".RelayReceiver"
             android:exported="false">
             <intent-filter>
-                <action android:name="dev.telepathy.SWITCH_LANE" />
-                <action android:name="dev.telepathy.TALK" />
-                <action android:name="dev.telepathy.STOP" />
+                <action android:name="dev.telepathos.SWITCH_LANE" />
+                <action android:name="dev.telepathos.TALK" />
+                <action android:name="dev.telepathos.STOP" />
             </intent-filter>
         </receiver>
 

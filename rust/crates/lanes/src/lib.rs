@@ -12,14 +12,14 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use telepathy_proto::MAX_SAFE_SEQUENCE;
-pub use telepathy_proto::{is_valid_lane_id, MAX_LANE_ID_LENGTH};
+use telepathos_proto::MAX_SAFE_SEQUENCE;
+pub use telepathos_proto::{is_valid_lane_id, MAX_LANE_ID_LENGTH};
 
 /// Shared with `server/src/lanes.ts::MAX_LANE_COUNT`.
 ///
 /// A complete state response for 256 normal maximum-length generated lanes,
 /// including `pending`, `active`, and `revision`, is under 128 KiB. That is an
-/// eightfold margin below the 1 MiB Node <-> telepathyd state transport cap.
+/// eightfold margin below the 1 MiB Node <-> telepathosd state transport cap.
 pub const MAX_LANE_COUNT: usize = 256;
 pub const LANE_CAPACITY_ERROR_MESSAGE: &str = "lane capacity reached; use an existing conversation";
 
@@ -133,14 +133,14 @@ impl LaneRegistry {
         let now = now_iso();
         Self {
             lanes: vec![Lane {
-                id: "telepathy:direct".into(),
+                id: "telepathos:direct".into(),
                 name: "direct".into(),
                 created_at: now.clone(),
                 last_active: now,
                 interactions: None,
             }],
-            active_id: "telepathy:direct".into(),
-            previous_id: "telepathy:direct".into(),
+            active_id: "telepathos:direct".into(),
+            previous_id: "telepathos:direct".into(),
         }
     }
 
@@ -248,7 +248,7 @@ impl LaneRegistry {
     pub fn create(&mut self, name: &str) -> Result<Lane, LaneCreateError> {
         self.validate_create(name)?;
         let slug = slugify(name);
-        let id = format!("telepathy:repo:{slug}");
+        let id = format!("telepathos:repo:{slug}");
         if let Some(l) = self.lanes.iter().find(|l| l.id == id) {
             return Ok(l.clone());
         }
@@ -275,7 +275,7 @@ impl LaneRegistry {
         if slug.is_empty() {
             return Err(LaneCreateError::InvalidGeneratedId);
         }
-        let id = format!("telepathy:repo:{slug}");
+        let id = format!("telepathos:repo:{slug}");
         if !is_valid_lane_id(&id) {
             return Err(LaneCreateError::InvalidGeneratedId);
         }
@@ -286,7 +286,7 @@ impl LaneRegistry {
     /// lanes remain usable at capacity; only a new lane is rejected.
     pub fn validate_create(&self, name: &str) -> Result<(), LaneCreateError> {
         Self::validate_create_name(name)?;
-        let id = format!("telepathy:repo:{}", slugify(name));
+        let id = format!("telepathos:repo:{}", slugify(name));
         if !self.lanes.iter().any(|lane| lane.id == id) && self.lanes.len() >= MAX_LANE_COUNT {
             return Err(LaneCreateError::CapacityReached);
         }
@@ -333,7 +333,7 @@ fn parse_fixed_digits(value: &str, start: usize, length: usize) -> Option<u16> {
     digits.parse().ok()
 }
 
-/// Current Node snapshots use exact UTC ISO milliseconds while telepathyd
+/// Current Node snapshots use exact UTC ISO milliseconds while telepathosd
 /// writes `epoch-ms:` plus a JSON-safe non-negative integer. Both are already
 /// authoritative shared snapshots, so the hard validation accepts those two
 /// exact spellings and rejects every other type/range without repairing it.
@@ -553,7 +553,9 @@ mod tests {
     fn full_registry() -> LaneRegistry {
         let mut registry = LaneRegistry::default_direct();
         for index in 1..MAX_LANE_COUNT {
-            let name = format!("{index:03}-{}", "x".repeat(109));
+            // Slug budget: "telepathos:repo:" prefix (16) leaves 112 slug bytes under
+// MAX_LANE_ID_LENGTH; the 4-char index prefix leaves 108 for the x-run.
+            let name = format!("{index:03}-{}", "x".repeat(108));
             registry.create(&name).unwrap();
         }
         assert_eq!(registry.lanes.len(), MAX_LANE_COUNT);
@@ -562,7 +564,7 @@ mod tests {
 
     #[test]
     fn lane_id_contract_preserves_direct_and_generated_ids() {
-        for id in ["telepathy:direct", "telepathy:repo:geospatial-migration"] {
+        for id in ["telepathos:direct", "telepathos:repo:geospatial-migration"] {
             assert!(is_valid_lane_id(id), "expected valid lane id: {id}");
         }
     }
@@ -572,11 +574,11 @@ mod tests {
         for id in [
             "",
             " ",
-            "telepathy:repo:bad\"quote",
-            r"telepathy:repo:bad\slash",
-            "telepathy:repo:bad\nnewline",
-            "telepathy:repo:é",
-            &format!("telepathy:repo:{}", "a".repeat(MAX_LANE_ID_LENGTH)),
+            "telepathos:repo:bad\"quote",
+            r"telepathos:repo:bad\slash",
+            "telepathos:repo:bad\nnewline",
+            "telepathos:repo:é",
+            &format!("telepathos:repo:{}", "a".repeat(MAX_LANE_ID_LENGTH)),
         ] {
             assert!(!is_valid_lane_id(id), "expected invalid lane id: {id:?}");
         }
@@ -586,7 +588,7 @@ mod tests {
     fn invalid_switch_does_not_mutate_registry() {
         let mut registry = LaneRegistry::default_direct();
         let before = registry.clone();
-        assert!(registry.switch("telepathy:direct\"altered").is_none());
+        assert!(registry.switch("telepathos:direct\"altered").is_none());
         assert_eq!(registry, before);
     }
 
@@ -643,7 +645,7 @@ mod tests {
 
         let lane = registry.create("A..B").unwrap();
 
-        assert_eq!(lane.id, "telepathy:repo:a--b");
+        assert_eq!(lane.id, "telepathos:repo:a--b");
         assert_eq!(lane.name, "a--b");
     }
 
@@ -679,7 +681,7 @@ mod tests {
     #[test]
     fn over_capacity_snapshots_fail_closed_on_load_and_before_save_replacement() {
         let path = std::env::temp_dir().join(format!(
-            "telepathy-lanes-over-capacity-{}-{}.json",
+            "telepathos-lanes-over-capacity-{}-{}.json",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -692,7 +694,7 @@ mod tests {
 
         let mut over_capacity = registry.clone();
         over_capacity.lanes.push(Lane {
-            id: "telepathy:repo:overflow".into(),
+            id: "telepathos:repo:overflow".into(),
             name: "overflow".into(),
             created_at: now_iso(),
             last_active: now_iso(),
@@ -758,7 +760,7 @@ mod tests {
     #[test]
     fn invalid_metadata_snapshot_and_save_fail_closed_without_overwrite() {
         let path = std::env::temp_dir().join(format!(
-            "telepathy-lanes-invalid-metadata-{}-{}.json",
+            "telepathos-lanes-invalid-metadata-{}-{}.json",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -791,14 +793,14 @@ mod tests {
         let mut registry = LaneRegistry::default_direct();
         let before = registry.clone();
 
-        assert!(registry.touch("telepathy:missing").is_none());
+        assert!(registry.touch("telepathos:missing").is_none());
         assert_eq!(registry, before);
     }
 
     #[test]
     fn invalid_persisted_lane_id_is_rejected_at_load() {
         let path = std::env::temp_dir().join(format!(
-            "telepathy-lanes-invalid-id-{}-{}.json",
+            "telepathos-lanes-invalid-id-{}-{}.json",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -807,7 +809,7 @@ mod tests {
         ));
         fs::write(
             &path,
-            r#"{"lanes":[{"id":"telepathy:repo:bad\"quote","name":"bad","created_at":"now","last_active":"now"}],"active_id":"telepathy:repo:bad\"quote","previous_id":"telepathy:repo:bad\"quote"}"#,
+            r#"{"lanes":[{"id":"telepathos:repo:bad\"quote","name":"bad","created_at":"now","last_active":"now"}],"active_id":"telepathos:repo:bad\"quote","previous_id":"telepathos:repo:bad\"quote"}"#,
         )
         .unwrap();
         assert!(std::panic::catch_unwind(|| LaneRegistry::load(&path)).is_err());
@@ -817,7 +819,7 @@ mod tests {
     #[test]
     fn relative_registry_path_can_be_saved_and_reloaded() {
         let path = PathBuf::from(format!(
-            ".telepathy-lanes-relative-{}-{}.json",
+            ".telepathos-lanes-relative-{}-{}.json",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -833,7 +835,7 @@ mod tests {
     #[test]
     fn save_returns_a_definite_pre_rename_error_without_replacing_the_snapshot() {
         let blocker = std::env::temp_dir().join(format!(
-            "telepathy-lanes-save-blocker-{}-{}",
+            "telepathos-lanes-save-blocker-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -852,7 +854,7 @@ mod tests {
     #[test]
     fn post_rename_failure_is_ambiguous_and_leaves_the_replacement_visible() {
         let path = std::env::temp_dir().join(format!(
-            "telepathy-lanes-save-post-rename-{}-{}.json",
+            "telepathos-lanes-save-post-rename-{}-{}.json",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -879,7 +881,7 @@ mod tests {
     #[test]
     fn nested_directory_creation_syncs_every_new_parent_before_snapshot_write() {
         let root = std::env::temp_dir().join(format!(
-            "telepathy-lanes-nested-sync-{}-{}",
+            "telepathos-lanes-nested-sync-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -905,7 +907,7 @@ mod tests {
     #[test]
     fn nested_directory_parent_sync_failure_is_definite_pre_rename() {
         let root = std::env::temp_dir().join(format!(
-            "telepathy-lanes-nested-sync-failure-{}-{}",
+            "telepathos-lanes-nested-sync-failure-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -937,7 +939,7 @@ mod tests {
     #[test]
     fn interaction_count_above_json_safe_limit_is_rejected_before_snapshot_write() {
         let path = std::env::temp_dir().join(format!(
-            "telepathy-lanes-unsafe-interactions-{}-{}.json",
+            "telepathos-lanes-unsafe-interactions-{}-{}.json",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)

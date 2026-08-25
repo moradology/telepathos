@@ -10,11 +10,11 @@ import {
 } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { isValidLaneId, isValidOpaqueId } from "./protocol.js";
-import { currentTelepathydTargetIdentity, isTargetIdentity } from "./target-scope.js";
+import { currentTelepathosdTargetIdentity, isTargetIdentity } from "./target-scope.js";
 
 export { MAX_OPAQUE_ID_LENGTH as MAX_INTERACTION_ID_LENGTH, MAX_OPAQUE_ID_BYTES as MAX_INTERACTION_ID_BYTES } from "./protocol.js";
 
-/** A remote voice turn with a stable ID in telepathyd's seven-day dedupe window. */
+/** A remote voice turn with a stable ID in telepathosd's seven-day dedupe window. */
 export interface InteractionRecord {
   laneId: string;
   interactionId: string;
@@ -75,8 +75,8 @@ export function failNextInteractionOutboxWriteBeforeRenameForTest(): void {
  * without exposing a production control path.
  */
 function injectReservationCancellationFailureForTest(): void {
-  if (process.env.TELEPATHY_TEST_FAIL_NEXT_INTERACTION_OUTBOX_CANCEL_BEFORE_RENAME !== "1") return;
-  delete process.env.TELEPATHY_TEST_FAIL_NEXT_INTERACTION_OUTBOX_CANCEL_BEFORE_RENAME;
+  if (process.env.TELEPATHOS_TEST_FAIL_NEXT_INTERACTION_OUTBOX_CANCEL_BEFORE_RENAME !== "1") return;
+  delete process.env.TELEPATHOS_TEST_FAIL_NEXT_INTERACTION_OUTBOX_CANCEL_BEFORE_RENAME;
   failNextInteractionOutboxWriteBeforeRenameForTest();
 }
 
@@ -96,15 +96,15 @@ export function setInteractionOutboxDirectorySyncHookForTest(
 }
 
 export function defaultInteractionOutboxPath(): string {
-  return `${process.env.TELEPATHY_LANES ?? "lanes.json"}.interaction-outbox.json`;
+  return `${process.env.TELEPATHOS_LANES ?? "lanes.json"}.interaction-outbox.json`;
 }
 
 export function interactionOutboxCapacityFromEnvironment(): number {
-  const raw = process.env.TELEPATHY_INTERACTION_OUTBOX_MAX;
+  const raw = process.env.TELEPATHOS_INTERACTION_OUTBOX_MAX;
   if (raw === undefined || raw === "") return DEFAULT_CAPACITY;
   const capacity = Number(raw);
   if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > 10_000) {
-    throw new Error("TELEPATHY_INTERACTION_OUTBOX_MAX must be an integer from 1 through 10000");
+    throw new Error("TELEPATHOS_INTERACTION_OUTBOX_MAX must be an integer from 1 through 10000");
   }
   return capacity;
 }
@@ -307,9 +307,9 @@ export class InteractionOutbox {
     }
     this.path = path;
     this.capacity = capacity;
-    this.targetIdentity = currentTelepathydTargetIdentity();
+    this.targetIdentity = currentTelepathosdTargetIdentity();
     this.records = load(path, capacity, this.targetIdentity);
-    // Promotion is durably persisted before Hermes/telepathyd is called, so
+    // Promotion is durably persisted before Hermes/telepathosd is called, so
     // no reserved row has a remote side effect to replay or count.
     if (this.records.some((record) => record.state === "reserved")) {
       this.records = this.records.filter((record) => record.state !== "reserved");
@@ -325,9 +325,9 @@ export class InteractionOutbox {
   targetScope(): string { return this.targetIdentity; }
 
   assertCurrentTarget(): void {
-    if (currentTelepathydTargetIdentity() !== this.targetIdentity) {
+    if (currentTelepathosdTargetIdentity() !== this.targetIdentity) {
       throw new InteractionOutboxBlockedError(
-        `interaction outbox ${this.path}: telepathyd target identity changed; durable interactions remain pending`,
+        `interaction outbox ${this.path}: telepathosd target identity changed; durable interactions remain pending`,
       );
     }
   }
@@ -348,22 +348,22 @@ export class InteractionOutbox {
       reserved,
       expired,
       accepting: this.persistenceFailure === null &&
-        currentTelepathydTargetIdentity() === this.targetIdentity &&
+        currentTelepathosdTargetIdentity() === this.targetIdentity &&
         expired === 0 && this.records.length < this.capacity,
     };
   }
 
   unavailableReason(): string | null {
     if (this.persistenceFailure !== null) return this.persistenceFailure;
-    if (currentTelepathydTargetIdentity() !== this.targetIdentity) {
-      return "telepathyd target identity changed; durable interactions remain pending until the original target is restored";
+    if (currentTelepathosdTargetIdentity() !== this.targetIdentity) {
+      return "telepathosd target identity changed; durable interactions remain pending until the original target is restored";
     }
     const status = this.status();
     if (status.expired > 0) {
-      return `${status.expired} remote interaction record(s) exceeded telepathyd's seven-day retry window; operator reconciliation is required`;
+      return `${status.expired} remote interaction record(s) exceeded telepathosd's seven-day retry window; operator reconciliation is required`;
     }
     if (status.used >= status.capacity) {
-      return `remote interaction outbox is full (${status.used}/${status.capacity}); remote turns are paused until telepathyd records activity`;
+      return `remote interaction outbox is full (${status.used}/${status.capacity}); remote turns are paused until telepathosd records activity`;
     }
     return null;
   }

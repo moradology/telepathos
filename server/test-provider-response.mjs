@@ -91,7 +91,7 @@ assert.equal(
 );
 assert.equal(boundedProviderText("a".repeat(MAX_REPLY_TEXT_BYTES + 1)), null);
 
-process.env.TELEPATHY_STT = "openai";
+process.env.TELEPATHOS_STT = "openai";
 const { transcribe } = await import("./dist/transcriber.js");
 const { runMetaAgent } = await import("./dist/meta-agent.js");
 
@@ -129,9 +129,9 @@ try {
   await expectProviderFailure(transcribe(Buffer.from("audio")), "transport");
 
   const registry = {
-    lanes: [{ id: "telepathy:direct", name: "direct", createdAt: "", lastActive: "" }],
-    activeId: "telepathy:direct",
-    previousId: "telepathy:direct",
+    lanes: [{ id: "telepathos:direct", name: "direct", createdAt: "", lastActive: "" }],
+    activeId: "telepathos:direct",
+    previousId: "telepathos:direct",
   };
   const metaConfig = { baseUrl: "http://provider.invalid", apiKey: "meta-key", model: "meta" };
 
@@ -158,8 +158,8 @@ try {
   globalThis.fetch = originalFetch;
 }
 
-const lanesDir = await mkdtemp(join(tmpdir(), "telepathy-provider-error-test-"));
-process.env.TELEPATHY_LANES = join(lanesDir, "lanes.json");
+const lanesDir = await mkdtemp(join(tmpdir(), "telepathos-provider-error-test-"));
+process.env.TELEPATHOS_LANES = join(lanesDir, "lanes.json");
 try {
   const { phoneSafeErrorMessage } = await import("./dist/index.js");
   const { LaneNameError, LanePersistenceError } = await import("./dist/lanes.js");
@@ -169,7 +169,7 @@ try {
   assert(!providerMessage.includes("secret"), "handset provider errors must never include provider bodies");
   assert.equal(phoneSafeErrorMessage(new ProviderResponseError("transport"), "stt"), "stt provider unavailable");
   assert.equal(
-    phoneSafeErrorMessage(new LanePersistenceError("pre-rename", `cannot persist lane registry ${process.env.TELEPATHY_LANES}: secret-path`)),
+    phoneSafeErrorMessage(new LanePersistenceError("pre-rename", `cannot persist lane registry ${process.env.TELEPATHOS_LANES}: secret-path`)),
     "request failed",
     "lane persistence details must use the stable handset fallback",
   );

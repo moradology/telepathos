@@ -1,4 +1,4 @@
-// Hermes connector contract tests. The fake telepathyd endpoint deliberately
+// Hermes connector contract tests. The fake telepathosd endpoint deliberately
 // queues a reply during POST /api/message; the client must have captured the
 // cursor before that POST or it will skip the fast reply.
 import http from "node:http";
@@ -8,15 +8,15 @@ import { join } from "node:path";
 import {
   deliverAndWait,
   deliverAndWaitWithReceipt,
-  fetchTelepathydState,
-  readTelepathydJson,
-  respondViaTelepathydMeta,
-  TELEPATHYD_STATE_RESPONSE_MAX_BYTES,
-  TelepathydResponseError,
-  telepathydTransportError,
+  fetchTelepathosdState,
+  readTelepathosdJson,
+  respondViaTelepathosdMeta,
+  TELEPATHOSD_STATE_RESPONSE_MAX_BYTES,
+  TelepathosdResponseError,
+  telepathosdTransportError,
 } from "./dist/hermes.js";
 import { API_REQUEST_MAX_BYTES, decodeApiRequestBytes, startApiServer } from "./dist/api.js";
-import { normalizeTelepathydBaseUrl, targetIdentityFor } from "./dist/target-scope.js";
+import { normalizeTelepathosdBaseUrl, targetIdentityFor } from "./dist/target-scope.js";
 
 let failures = 0;
 const check = (name, ok, detail = "") => {
@@ -38,7 +38,7 @@ const server = http.createServer((req, res) => {
     const after = Number(url.searchParams.get("after"));
     res.setHeader("Content-Type", "application/json");
     if (after === 5) res.end(JSON.stringify({
-      deliveries: [{ seq: 6, chat_id: "telepathy:direct", content: "fast reply", reply_to: "tp-1" }],
+      deliveries: [{ seq: 6, chat_id: "telepathos:direct", content: "fast reply", reply_to: "tp-1" }],
       latest: 6,
     }));
     else res.end(JSON.stringify({ deliveries: [], latest: 5 }));
@@ -47,9 +47,9 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && url.pathname === "/api/state") {
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({
-      lanes: [{ id: "telepathy:direct", name: "direct", created_at: "2020-01-01", last_active: "2020-01-01" }],
-      active_id: "telepathy:direct",
-      previous_id: "telepathy:direct",
+      lanes: [{ id: "telepathos:direct", name: "direct", created_at: "2020-01-01", last_active: "2020-01-01" }],
+      active_id: "telepathos:direct",
+      previous_id: "telepathos:direct",
       revision: 0,
     }));
     return;
@@ -69,12 +69,12 @@ const cfg = {
   timeoutMs: 5_000,
   targetIdentity: targetIdentityFor(`http://127.0.0.1:${address.port}`),
 };
-const reply = await deliverAndWait(cfg, () => ({ id: "telepathy:direct" }), "hello");
+const reply = await deliverAndWait(cfg, () => ({ id: "telepathos:direct" }), "hello");
 
 check("fast reply is not skipped", reply === "fast reply", reply);
 check("cursor head is captured before POST", requests[1]?.path === "/api/delivery/head" && requests[2]?.path === "/api/message");
 check("poll is lane-scoped, correlated, and defers consumption",
-  requests[3]?.query.lane_id === "telepathy:direct" &&
+  requests[3]?.query.lane_id === "telepathos:direct" &&
   requests[3]?.query.reply_to === "tp-1" &&
   requests[3]?.query.consume === "false");
 check("normalized URL identity is stable", cfg.targetIdentity === targetIdentityFor(`${cfg.baseUrl}/`));
@@ -87,7 +87,7 @@ for (const [label, url, secrets] of [
 ]) {
   let error = null;
   try {
-    normalizeTelepathydBaseUrl(url);
+    normalizeTelepathosdBaseUrl(url);
   } catch (e) {
     error = String(e?.message ?? e);
   }
@@ -95,16 +95,16 @@ for (const [label, url, secrets] of [
     error !== null && !secrets.some((secret) => error.includes(secret)), error ?? "accepted");
 }
 
-const previousToken = process.env.TELEPATHY_TOKEN;
-process.env.TELEPATHY_TOKEN = "secret";
-check("token blocks remote cleartext telepathyd", Boolean(
-  telepathydTransportError("http://192.168.1.10:8790"),
+const previousToken = process.env.TELEPATHOS_TOKEN;
+process.env.TELEPATHOS_TOKEN = "secret";
+check("token blocks remote cleartext telepathosd", Boolean(
+  telepathosdTransportError("http://192.168.1.10:8790"),
 ));
-check("token permits loopback cleartext telepathyd", !telepathydTransportError(
+check("token permits loopback cleartext telepathosd", !telepathosdTransportError(
   "http://127.0.0.1:8790",
 ));
-if (previousToken === undefined) delete process.env.TELEPATHY_TOKEN;
-else process.env.TELEPATHY_TOKEN = previousToken;
+if (previousToken === undefined) delete process.env.TELEPATHOS_TOKEN;
+else process.env.TELEPATHOS_TOKEN = previousToken;
 
 // Request bodies are bytes, not independently decodable string chunks. Each
 // boundary of 2/3/4-byte code points must survive exactly as sent.
@@ -142,9 +142,9 @@ const runInvalidHeadCase = async (label, headBody) => {
     if (req.method === "GET" && url.pathname === "/api/state") {
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({
-        lanes: [{ id: "telepathy:direct", name: "direct", created_at: "", last_active: "" }],
-        active_id: "telepathy:direct",
-        previous_id: "telepathy:direct",
+        lanes: [{ id: "telepathos:direct", name: "direct", created_at: "", last_active: "" }],
+        active_id: "telepathos:direct",
+        previous_id: "telepathos:direct",
         revision: 0,
       }));
       return;
@@ -175,15 +175,15 @@ const runInvalidHeadCase = async (label, headBody) => {
   try {
     result = await deliverAndWaitWithReceipt(
       headCfg,
-      () => ({ id: "telepathy:direct" }),
+      () => ({ id: "telepathos:direct" }),
       "hello",
-      "telepathy:direct",
+      "telepathos:direct",
     );
   } catch (caught) {
     error = caught;
   }
   check(`${label} returns the stable sanitized head failure`,
-    error?.message === "telepathyd delivery: response rejected",
+    error?.message === "telepathosd delivery: response rejected",
     error?.message ?? "no error");
   check(`${label} does not POST or create a receipt`,
     messagePosts === 0 && result === null,
@@ -222,9 +222,9 @@ const runValidHeadBoundaryCase = async (label, latest) => {
     if (req.method === "GET" && url.pathname === "/api/state") {
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({
-        lanes: [{ id: "telepathy:direct", name: "direct", created_at: "", last_active: "" }],
-        active_id: "telepathy:direct",
-        previous_id: "telepathy:direct",
+        lanes: [{ id: "telepathos:direct", name: "direct", created_at: "", last_active: "" }],
+        active_id: "telepathos:direct",
+        previous_id: "telepathos:direct",
         revision: 0,
       }));
       return;
@@ -254,9 +254,9 @@ const runValidHeadBoundaryCase = async (label, latest) => {
   };
   const operation = deliverAndWaitWithReceipt(
     boundaryCfg,
-    () => ({ id: "telepathy:direct" }),
+    () => ({ id: "telepathos:direct" }),
     "hello",
-    "telepathy:direct",
+    "telepathos:direct",
     controller.signal,
   ).then(
     (value) => ({ kind: "result", value }),
@@ -287,8 +287,8 @@ await runValidHeadBoundaryCase("max-safe", Number.MAX_SAFE_INTEGER);
 const oversizedUnrelatedContent = "u".repeat(300 * 1024);
 const oversizedUnrelatedBatch = JSON.stringify({
   deliveries: [
-    { seq: 1, chat_id: "telepathy:other", content: oversizedUnrelatedContent },
-    { seq: 2, chat_id: "telepathy:other", content: oversizedUnrelatedContent },
+    { seq: 1, chat_id: "telepathos:other", content: oversizedUnrelatedContent },
+    { seq: 2, chat_id: "telepathos:other", content: oversizedUnrelatedContent },
   ],
   latest: 2,
 });
@@ -303,9 +303,9 @@ const oversizedBacklogServer = http.createServer((req, res) => {
   if (req.method === "GET" && url.pathname === "/api/state") {
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({
-      lanes: [{ id: "telepathy:direct", name: "direct", created_at: "", last_active: "" }],
-      active_id: "telepathy:direct",
-      previous_id: "telepathy:direct",
+      lanes: [{ id: "telepathos:direct", name: "direct", created_at: "", last_active: "" }],
+      active_id: "telepathos:direct",
+      previous_id: "telepathos:direct",
       revision: 0,
     }));
     return;
@@ -323,7 +323,7 @@ const oversizedBacklogServer = http.createServer((req, res) => {
       res.end(JSON.stringify({
         deliveries: [{
           seq: 3,
-          chat_id: "telepathy:direct",
+          chat_id: "telepathos:direct",
           content: "reply after oversized backlog",
           reply_to: "tp-backlog",
         }],
@@ -348,9 +348,9 @@ const oversizedBacklogReply = await deliverAndWaitWithReceipt(
     timeoutMs: 2_500,
     targetIdentity: targetIdentityFor(oversizedBacklogUrl),
   },
-  () => ({ id: "telepathy:direct" }),
+  () => ({ id: "telepathos:direct" }),
   "hello",
-  "telepathy:direct",
+  "telepathos:direct",
 );
 check("oversized unrelated backlog still permits a new reply",
   oversizedBacklogReply.text === "reply after oversized backlog" && oversizedBacklogPosts === 1,
@@ -379,12 +379,12 @@ const apiRequest = (port, path, body, headers = {}) => new Promise((resolve, rej
   request.end();
 });
 
-const originalHermesUrl = process.env.TELEPATHY_HERMES_URL;
-delete process.env.TELEPATHY_HERMES_URL;
+const originalHermesUrl = process.env.TELEPATHOS_HERMES_URL;
+delete process.env.TELEPATHOS_HERMES_URL;
 const apiRegistry = {
-  lanes: [{ id: "telepathy:direct", name: "direct", createdAt: "", lastActive: "" }],
-  activeId: "telepathy:direct",
-  previousId: "telepathy:direct",
+  lanes: [{ id: "telepathos:direct", name: "direct", createdAt: "", lastActive: "" }],
+  activeId: "telepathos:direct",
+  previousId: "telepathos:direct",
 };
 const apiServer = startApiServer(apiRegistry, 0, "127.0.0.1");
 await new Promise((resolve) => apiServer.once("listening", resolve));
@@ -398,8 +398,8 @@ const malformedApiResponse = await apiRequest(
 check("malformed API request returns 400 without mutation",
   malformedApiResponse.status === 400 && JSON.stringify(apiRegistry) === apiBeforeMalformed);
 await close(apiServer);
-if (originalHermesUrl === undefined) delete process.env.TELEPATHY_HERMES_URL;
-else process.env.TELEPATHY_HERMES_URL = originalHermesUrl;
+if (originalHermesUrl === undefined) delete process.env.TELEPATHOS_HERMES_URL;
+else process.env.TELEPATHOS_HERMES_URL = originalHermesUrl;
 
 const exactRemoteLimit = 256;
 const exactRemoteBody = JSON.stringify({ value: "x".repeat(exactRemoteLimit - 12) });
@@ -447,8 +447,8 @@ const transportServer = http.createServer((req, res) => {
   if (url.pathname === "/api/state") {
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({
-      lanes: [{ id: "telepathy:direct", name: "direct", created_at: "", last_active: "" }],
-      active_id: "telepathy:direct", previous_id: "telepathy:direct", revision: 0,
+      lanes: [{ id: "telepathos:direct", name: "direct", created_at: "", last_active: "" }],
+      active_id: "telepathos:direct", previous_id: "telepathos:direct", revision: 0,
     }));
     return;
   }
@@ -484,9 +484,9 @@ const transportUrl = `http://127.0.0.1:${transportServer.address().port}`;
 
 const readRemote = async (path, limit = exactRemoteLimit) => {
   try {
-    return { value: await readTelepathydJson(await fetch(`${transportUrl}${path}`), limit) };
+    return { value: await readTelepathosdJson(await fetch(`${transportUrl}${path}`), limit) };
   } catch (error) {
-    return { failure: error instanceof TelepathydResponseError ? error.failure : String(error) };
+    return { failure: error instanceof TelepathosdResponseError ? error.failure : String(error) };
   }
 };
 check("remote exact Content-Length body is accepted", (await readRemote("/exact")).value?.value?.length === exactRemoteLimit - 12);
@@ -502,22 +502,22 @@ const transportCfg = {
   timeoutMs: 500,
   targetIdentity: targetIdentityFor(transportUrl),
 };
-check("telepathyd state success still works", (await fetchTelepathydState(transportCfg))?.active_id === "telepathy:direct");
+check("telepathosd state success still works", (await fetchTelepathosdState(transportCfg))?.active_id === "telepathos:direct");
 let postError = "";
-try { await deliverAndWait(transportCfg, () => ({ id: "telepathy:direct" }), "hello"); } catch (error) {
+try { await deliverAndWait(transportCfg, () => ({ id: "telepathos:direct" }), "hello"); } catch (error) {
   postError = String(error?.message ?? error);
 }
 check("Hermes post preserves permanent 413 without daemon body", postError.includes("413") && !postError.includes("daemon-secret"));
-const savedTransportEnv = process.env.TELEPATHY_HERMES_URL;
-process.env.TELEPATHY_HERMES_URL = transportUrl;
+const savedTransportEnv = process.env.TELEPATHOS_HERMES_URL;
+process.env.TELEPATHOS_HERMES_URL = transportUrl;
 let metaError = "";
-try { await respondViaTelepathydMeta("hello"); } catch (error) { metaError = String(error?.message ?? error); }
+try { await respondViaTelepathosdMeta("hello"); } catch (error) { metaError = String(error?.message ?? error); }
 check("Hermes meta sanitizes daemon error body", metaError.includes("unavailable") && !metaError.includes("daemon-secret"));
 
 // A meta response can be fully valid after the target changes while the
 // captured request is still in flight. The response must not cross that fence.
-const savedMetaUrl = process.env.TELEPATHY_HERMES_URL;
-const savedMetaToken = process.env.TELEPATHY_TOKEN;
+const savedMetaUrl = process.env.TELEPATHOS_HERMES_URL;
+const savedMetaToken = process.env.TELEPATHOS_TOKEN;
 let targetAReadyResolve;
 let releaseTargetAResolve;
 const targetAReady = new Promise((resolve) => { targetAReadyResolve = resolve; });
@@ -554,24 +554,24 @@ await listen(targetB);
 const targetAUrl = `http://127.0.0.1:${targetA.address().port}`;
 const targetBUrl = `http://127.0.0.1:${targetB.address().port}`;
 try {
-  process.env.TELEPATHY_HERMES_URL = targetAUrl;
-  process.env.TELEPATHY_TOKEN = "target-token-a";
-  const staleOperation = respondViaTelepathydMeta("cut over safely");
+  process.env.TELEPATHOS_HERMES_URL = targetAUrl;
+  process.env.TELEPATHOS_TOKEN = "target-token-a";
+  const staleOperation = respondViaTelepathosdMeta("cut over safely");
   await targetAReady;
 
-  process.env.TELEPATHY_HERMES_URL = targetBUrl;
-  process.env.TELEPATHY_TOKEN = "target-token-b";
+  process.env.TELEPATHOS_HERMES_URL = targetBUrl;
+  process.env.TELEPATHOS_TOKEN = "target-token-b";
   releaseTargetAResolve();
   let staleError = null;
   try { await staleOperation; } catch (error) { staleError = error; }
   check("meta response is fenced after URL and token rotation",
-    staleError?.message === "telepathyd target identity changed; durable remote state remains pending until the original target is restored" &&
+    staleError?.message === "telepathosd target identity changed; durable remote state remains pending until the original target is restored" &&
     targetARequests === 1 && targetBRequests === 0,
     staleError?.message ?? "stale reply returned");
 
-  process.env.TELEPATHY_HERMES_URL = targetAUrl;
-  process.env.TELEPATHY_TOKEN = "target-token-a";
-  const sameTargetReply = await respondViaTelepathydMeta("same target");
+  process.env.TELEPATHOS_HERMES_URL = targetAUrl;
+  process.env.TELEPATHOS_TOKEN = "target-token-a";
+  const sameTargetReply = await respondViaTelepathosdMeta("same target");
   check("meta response succeeds when target identity is unchanged",
     sameTargetReply === "same target A reply" && targetARequests === 2,
     sameTargetReply ?? "no reply");
@@ -579,16 +579,16 @@ try {
   releaseTargetAResolve();
   await close(targetA);
   await close(targetB);
-  if (savedMetaUrl === undefined) delete process.env.TELEPATHY_HERMES_URL;
-  else process.env.TELEPATHY_HERMES_URL = savedMetaUrl;
-  if (savedMetaToken === undefined) delete process.env.TELEPATHY_TOKEN;
-  else process.env.TELEPATHY_TOKEN = savedMetaToken;
+  if (savedMetaUrl === undefined) delete process.env.TELEPATHOS_HERMES_URL;
+  else process.env.TELEPATHOS_HERMES_URL = savedMetaUrl;
+  if (savedMetaToken === undefined) delete process.env.TELEPATHOS_TOKEN;
+  else process.env.TELEPATHOS_TOKEN = savedMetaToken;
 }
 
 const proxyRegistry = {
-  lanes: [{ id: "telepathy:direct", name: "direct", createdAt: "", lastActive: "" }],
-  activeId: "telepathy:direct",
-  previousId: "telepathy:direct",
+  lanes: [{ id: "telepathos:direct", name: "direct", createdAt: "", lastActive: "" }],
+  activeId: "telepathos:direct",
+  previousId: "telepathos:direct",
 };
 const proxyServer = startApiServer(proxyRegistry, 0, "127.0.0.1");
 await new Promise((resolve) => proxyServer.once("listening", resolve));
@@ -598,24 +598,24 @@ const proxyMessageText = await proxyMessage.text();
 check("local proxy preserves 413 but strips daemon error body",
   proxyMessage.status === 413 && !proxyMessageText.includes("daemon-secret"));
 await close(proxyServer);
-if (savedTransportEnv === undefined) delete process.env.TELEPATHY_HERMES_URL;
-else process.env.TELEPATHY_HERMES_URL = savedTransportEnv;
+if (savedTransportEnv === undefined) delete process.env.TELEPATHOS_HERMES_URL;
+else process.env.TELEPATHOS_HERMES_URL = savedTransportEnv;
 await close(transportServer);
 
 // The API proxy must use one URL/token snapshot for auth, transport policy,
 // and upstream fetches. A runtime rotation must fence the request before it
 // can reach either the old daemon or local lane mutation code.
-const savedProxyUrl = process.env.TELEPATHY_HERMES_URL;
-const savedProxyToken = process.env.TELEPATHY_TOKEN;
-const savedProxyLanes = process.env.TELEPATHY_LANES;
-const proxyTestDirectory = mkdtempSync(join(tmpdir(), "telepathy-api-proxy-"));
-process.env.TELEPATHY_LANES = join(proxyTestDirectory, "lanes.json");
+const savedProxyUrl = process.env.TELEPATHOS_HERMES_URL;
+const savedProxyToken = process.env.TELEPATHOS_TOKEN;
+const savedProxyLanes = process.env.TELEPATHOS_LANES;
+const proxyTestDirectory = mkdtempSync(join(tmpdir(), "telepathos-api-proxy-"));
+process.env.TELEPATHOS_LANES = join(proxyTestDirectory, "lanes.json");
 const proxyTargets = [];
 const proxyApiServers = [];
 const startProxyTarget = async (label) => {
   const requests = [];
   const target = http.createServer((req, res) => {
-    requests.push({ method: req.method, path: req.url, token: req.headers["x-telepathy-token"] });
+    requests.push({ method: req.method, path: req.url, token: req.headers["x-telepathos-token"] });
     req.resume();
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ ok: true, target: label }));
@@ -633,7 +633,7 @@ const startProxyApi = async (registry) => {
 };
 const proxyRequest = async (base, path, method, token, body) => {
   const headers = {};
-  if (token !== undefined) headers["x-telepathy-token"] = token;
+  if (token !== undefined) headers["x-telepathos-token"] = token;
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const response = await fetch(`${base}${path}`, {
     method,
@@ -643,17 +643,17 @@ const proxyRequest = async (base, path, method, token, body) => {
   return { status: response.status, text: await response.text() };
 };
 const freshProxyRegistry = () => ({
-  lanes: [{ id: "telepathy:direct", name: "direct", createdAt: "", lastActive: "" }],
-  activeId: "telepathy:direct",
-  previousId: "telepathy:direct",
+  lanes: [{ id: "telepathos:direct", name: "direct", createdAt: "", lastActive: "" }],
+  activeId: "telepathos:direct",
+  previousId: "telepathos:direct",
 });
 
 try {
   const targetA = await startProxyTarget("A");
   const targetB = await startProxyTarget("B");
 
-  process.env.TELEPATHY_HERMES_URL = targetA.url;
-  process.env.TELEPATHY_TOKEN = "proxy-token-a";
+  process.env.TELEPATHOS_HERMES_URL = targetA.url;
+  process.env.TELEPATHOS_TOKEN = "proxy-token-a";
   const urlProxyBase = await startProxyApi(freshProxyRegistry());
   const initialProxyResponse = await proxyRequest(urlProxyBase, "/api/lanes", "POST", "proxy-token-a", "{}");
   check("API proxy uses the startup target/token snapshot",
@@ -663,30 +663,30 @@ try {
     targetB.requests.length === 0);
 
   const beforeUrlRotationA = targetA.requests.length;
-  process.env.TELEPATHY_HERMES_URL = targetB.url;
+  process.env.TELEPATHOS_HERMES_URL = targetB.url;
   const urlRotationResponse = await proxyRequest(urlProxyBase, "/api/lanes", "POST", "proxy-token-a", "{}");
   check("A to B URL rotation fences before either daemon receives the request",
     urlRotationResponse.status === 503 &&
     targetA.requests.length === beforeUrlRotationA &&
     targetB.requests.length === 0);
 
-  process.env.TELEPATHY_HERMES_URL = targetA.url;
-  process.env.TELEPATHY_TOKEN = "proxy-token-a";
+  process.env.TELEPATHOS_HERMES_URL = targetA.url;
+  process.env.TELEPATHOS_TOKEN = "proxy-token-a";
   const beforeTokenRotationA = targetA.requests.length;
-  process.env.TELEPATHY_TOKEN = "proxy-token-b";
+  process.env.TELEPATHOS_TOKEN = "proxy-token-b";
   const tokenRotationResponse = await proxyRequest(urlProxyBase, "/api/lanes", "POST", "proxy-token-b", "{}");
   check("token rotation fences before the old daemon receives a newly-authenticated request",
     tokenRotationResponse.status === 503 &&
     targetA.requests.length === beforeTokenRotationA &&
     targetB.requests.length === 0);
 
-  process.env.TELEPATHY_HERMES_URL = targetA.url;
-  process.env.TELEPATHY_TOKEN = "proxy-token-a";
+  process.env.TELEPATHOS_HERMES_URL = targetA.url;
+  process.env.TELEPATHOS_TOKEN = "proxy-token-a";
   const remoteToLocalRegistry = freshProxyRegistry();
   const remoteToLocalBase = await startProxyApi(remoteToLocalRegistry);
   const beforeRemoteToLocalA = targetA.requests.length;
-  delete process.env.TELEPATHY_HERMES_URL;
-  delete process.env.TELEPATHY_TOKEN;
+  delete process.env.TELEPATHOS_HERMES_URL;
+  delete process.env.TELEPATHOS_TOKEN;
   const remoteToLocalResponse = await proxyRequest(
     remoteToLocalBase,
     "/api/lanes",
@@ -702,8 +702,8 @@ try {
   const localToRemoteRegistry = freshProxyRegistry();
   const localToRemoteBase = await startProxyApi(localToRemoteRegistry);
   const beforeLocalToRemoteA = targetA.requests.length;
-  process.env.TELEPATHY_HERMES_URL = targetA.url;
-  process.env.TELEPATHY_TOKEN = "proxy-token-a";
+  process.env.TELEPATHOS_HERMES_URL = targetA.url;
+  process.env.TELEPATHOS_TOKEN = "proxy-token-a";
   const localToRemoteResponse = await proxyRequest(
     localToRemoteBase,
     "/api/lanes",
@@ -716,8 +716,8 @@ try {
     JSON.stringify(localToRemoteRegistry) === JSON.stringify(freshProxyRegistry()) &&
     targetA.requests.length === beforeLocalToRemoteA);
 
-  process.env.TELEPATHY_HERMES_URL = "http://192.0.2.1:9";
-  process.env.TELEPATHY_TOKEN = "proxy-token-a";
+  process.env.TELEPATHOS_HERMES_URL = "http://192.0.2.1:9";
+  process.env.TELEPATHOS_TOKEN = "proxy-token-a";
   const cleartextProxyBase = await startProxyApi(freshProxyRegistry());
   const cleartextResponse = await proxyRequest(cleartextProxyBase, "/api/state", "GET", "proxy-token-a");
   check("token-bearing cleartext non-loopback target is rejected before fetch",
@@ -727,12 +727,12 @@ try {
 } finally {
   for (const api of proxyApiServers) await close(api);
   for (const target of proxyTargets) await close(target);
-  if (savedProxyUrl === undefined) delete process.env.TELEPATHY_HERMES_URL;
-  else process.env.TELEPATHY_HERMES_URL = savedProxyUrl;
-  if (savedProxyToken === undefined) delete process.env.TELEPATHY_TOKEN;
-  else process.env.TELEPATHY_TOKEN = savedProxyToken;
-  if (savedProxyLanes === undefined) delete process.env.TELEPATHY_LANES;
-  else process.env.TELEPATHY_LANES = savedProxyLanes;
+  if (savedProxyUrl === undefined) delete process.env.TELEPATHOS_HERMES_URL;
+  else process.env.TELEPATHOS_HERMES_URL = savedProxyUrl;
+  if (savedProxyToken === undefined) delete process.env.TELEPATHOS_TOKEN;
+  else process.env.TELEPATHOS_TOKEN = savedProxyToken;
+  if (savedProxyLanes === undefined) delete process.env.TELEPATHOS_LANES;
+  else process.env.TELEPATHOS_LANES = savedProxyLanes;
   rmSync(proxyTestDirectory, { recursive: true, force: true });
 }
 
@@ -746,7 +746,7 @@ const runCorrelationCase = async (label, firstBatch, expectedPolls, expectedText
   const exactBatch = {
     deliveries: [{
       seq: 6,
-      chat_id: "telepathy:direct",
+      chat_id: "telepathos:direct",
       content: expectedText,
       reply_to: "tp-1",
     }],
@@ -758,9 +758,9 @@ const runCorrelationCase = async (label, firstBatch, expectedPolls, expectedText
     if (req.method === "GET" && url.pathname === "/api/state") {
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({
-        lanes: [{ id: "telepathy:direct", name: "direct", created_at: "", last_active: "" }],
-        active_id: "telepathy:direct",
-        previous_id: "telepathy:direct",
+        lanes: [{ id: "telepathos:direct", name: "direct", created_at: "", last_active: "" }],
+        active_id: "telepathos:direct",
+        previous_id: "telepathos:direct",
         revision: 0,
       }));
       return;
@@ -797,9 +797,9 @@ const runCorrelationCase = async (label, firstBatch, expectedPolls, expectedText
   try {
     result = await deliverAndWaitWithReceipt(
       correlationCfg,
-      () => ({ id: "telepathy:direct" }),
+      () => ({ id: "telepathos:direct" }),
       "hello",
-      "telepathy:direct",
+      "telepathos:direct",
     );
   } catch (caught) {
     error = caught;
@@ -823,30 +823,30 @@ const runCorrelationCase = async (label, firstBatch, expectedPolls, expectedText
 
 await runCorrelationCase(
   "same-lane wrong reply ID",
-  { deliveries: [{ seq: 6, chat_id: "telepathy:direct", content: "wrong turn", reply_to: "tp-other" }], latest: 6 },
+  { deliveries: [{ seq: 6, chat_id: "telepathos:direct", content: "wrong turn", reply_to: "tp-other" }], latest: 6 },
   2,
 );
 await runCorrelationCase(
   "mixed exact and wrong reply IDs",
   { deliveries: [
-    { seq: 6, chat_id: "telepathy:direct", content: "exact but mixed", reply_to: "tp-1" },
-    { seq: 7, chat_id: "telepathy:direct", content: "wrong turn", reply_to: "tp-other" },
+    { seq: 6, chat_id: "telepathos:direct", content: "exact but mixed", reply_to: "tp-1" },
+    { seq: 7, chat_id: "telepathos:direct", content: "wrong turn", reply_to: "tp-other" },
   ], latest: 7 },
   2,
 );
 await runCorrelationCase(
   "missing reply ID",
-  { deliveries: [{ seq: 6, chat_id: "telepathy:direct", content: "generic reply" }], latest: 6 },
+  { deliveries: [{ seq: 6, chat_id: "telepathos:direct", content: "generic reply" }], latest: 6 },
   2,
 );
 await runCorrelationCase(
   "wrong lane",
-  { deliveries: [{ seq: 6, chat_id: "telepathy:other", content: "other lane", reply_to: "tp-1" }], latest: 6 },
+  { deliveries: [{ seq: 6, chat_id: "telepathos:other", content: "other lane", reply_to: "tp-1" }], latest: 6 },
   2,
 );
 await runCorrelationCase(
   "malformed receipt interval",
-  { deliveries: [{ seq: 5, chat_id: "telepathy:direct", content: "non-advancing", reply_to: "tp-1" }], latest: 5 },
+  { deliveries: [{ seq: 5, chat_id: "telepathos:direct", content: "non-advancing", reply_to: "tp-1" }], latest: 5 },
   2,
 );
 await runCorrelationCase("valid exact correlation", null, 1);

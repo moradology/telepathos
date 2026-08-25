@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "dev.telepathy"
+    namespace = "dev.telepathos"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "dev.telepathy"
+        applicationId = "dev.telepathos"
         minSdk = 34          // Pixel 9 territory
         targetSdk = 35
         versionCode = 1

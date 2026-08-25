@@ -9,7 +9,7 @@ const vectors = JSON.parse(
 const reg = loadLanes();
 // seed kerchunk so switch/brief vectors have a target
 if (!reg.lanes.some((l) => l.name === "kerchunk")) {
-  reg.lanes.push({ id: "telepathy:repo:kerchunk", name: "kerchunk", createdAt: "", lastActive: "" });
+  reg.lanes.push({ id: "telepathos:repo:kerchunk", name: "kerchunk", createdAt: "", lastActive: "" });
 }
 
 let failures = 0;

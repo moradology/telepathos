@@ -91,10 +91,10 @@ async function startBridge(env) {
   // production store still hard-rejects all pre-cutover snapshot versions.
   const childEnv = { ...process.env, ...env };
   const targetIdentity = targetIdentityFor(
-    childEnv.TELEPATHY_HERMES_URL?.trim() || null,
-    childEnv.TELEPATHY_TOKEN || undefined,
+    childEnv.TELEPATHOS_HERMES_URL?.trim() || null,
+    childEnv.TELEPATHOS_TOKEN || undefined,
   );
-  const lanesPath = childEnv.TELEPATHY_LANES;
+  const lanesPath = childEnv.TELEPATHOS_LANES;
   if (lanesPath) {
     const ackPath = `${lanesPath}.reply-ack-bindings.json`;
     if (existsSync(ackPath)) {
@@ -121,7 +121,7 @@ async function startBridge(env) {
     const onData = (data) => {
       output += data.toString();
       bridgeLogs.set(child, output);
-      if (output.includes("telepathy bridge listening")) resolve();
+      if (output.includes("telepathos bridge listening")) resolve();
     };
     child.stdout.on("data", onData);
     child.stderr.on("data", onData);
@@ -130,8 +130,8 @@ async function startBridge(env) {
       reject(new Error(`bridge exited before startup: code=${code} signal=${signal}\n${output}`));
     });
   });
-  await waitForPort(Number(env.TELEPATHY_PORT));
-  await waitForPort(Number(env.TELEPATHY_API_PORT));
+  await waitForPort(Number(env.TELEPATHOS_PORT));
+  await waitForPort(Number(env.TELEPATHOS_API_PORT));
   return child;
 }
 
@@ -158,9 +158,9 @@ async function startHermesProbe({ stateDelayMs = 0 } = {}) {
       if (req.method === "GET" && req.url === "/api/state") {
         stateCalls += 1;
         const state = JSON.stringify({
-          lanes: [{ id: "telepathy:direct", name: "direct", created_at: "2020-01-01", last_active: "2020-01-01" }],
-          active_id: "telepathy:direct",
-          previous_id: "telepathy:direct",
+          lanes: [{ id: "telepathos:direct", name: "direct", created_at: "2020-01-01", last_active: "2020-01-01" }],
+          active_id: "telepathos:direct",
+          previous_id: "telepathos:direct",
           revision: 0,
         });
         const delay = typeof stateDelayMs === "function" ? stateDelayMs() : stateDelayMs;
@@ -188,7 +188,7 @@ async function startHermesProbe({ stateDelayMs = 0 } = {}) {
 }
 
 /**
- * Models telepathyd's interaction ledger closely enough to catch a bridge
+ * Models telepathosd's interaction ledger closely enough to catch a bridge
  * reusing an ID with different completed-turn metadata after a reconnect.
  */
 async function startInteractionLedgerProbe() {
@@ -216,9 +216,9 @@ async function startInteractionLedgerProbe() {
       if (req.method === "GET" && req.url === "/api/state") {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({
-          lanes: [{ id: "telepathy:direct", name: "direct", created_at: "2020-01-01", last_active: "2020-01-01" }],
-          active_id: "telepathy:direct",
-          previous_id: "telepathy:direct",
+          lanes: [{ id: "telepathos:direct", name: "direct", created_at: "2020-01-01", last_active: "2020-01-01" }],
+          active_id: "telepathos:direct",
+          previous_id: "telepathos:direct",
           revision: 0,
         }));
         return;
@@ -242,7 +242,7 @@ async function startInteractionLedgerProbe() {
           latest: sequence,
           deliveries: replyTo === null ? [] : [{
             seq: sequence,
-            chat_id: "telepathy:direct",
+            chat_id: "telepathos:direct",
             content: "acknowledged",
             reply_to: replyTo,
           }],
@@ -420,17 +420,17 @@ async function postLocalJson(apiPort, path, body) {
 }
 
 async function testMetaModelProposalPreservesConcurrentApiMutation() {
-  const directory = mkdtempSync(join(tmpdir(), "telepathy-meta-proposal-concurrency-"));
+  const directory = mkdtempSync(join(tmpdir(), "telepathos-meta-proposal-concurrency-"));
   const lanesPath = join(directory, "lanes.json");
   const wsPort = await freePort();
   const apiPort = await freePort();
   writeFileSync(lanesPath, JSON.stringify({
     lanes: [
-      { id: "telepathy:direct", name: "direct", created_at: "2020-01-01T00:00:00.000Z", last_active: "2020-01-01T00:00:00.000Z" },
-      { id: "telepathy:repo:lane-b", name: "lane-b", created_at: "2020-01-01T00:00:00.000Z", last_active: "2020-01-01T00:00:00.000Z" },
+      { id: "telepathos:direct", name: "direct", created_at: "2020-01-01T00:00:00.000Z", last_active: "2020-01-01T00:00:00.000Z" },
+      { id: "telepathos:repo:lane-b", name: "lane-b", created_at: "2020-01-01T00:00:00.000Z", last_active: "2020-01-01T00:00:00.000Z" },
     ],
-    active_id: "telepathy:direct",
-    previous_id: "telepathy:direct",
+    active_id: "telepathos:direct",
+    previous_id: "telepathos:direct",
   }));
   const probe = await startMetaModelProbe({
     id: "model-create",
@@ -440,19 +440,19 @@ async function testMetaModelProposalPreservesConcurrentApiMutation() {
   let turn;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
       // A blank-looking config is local mode, just like hermesConfig(). This
       // verifies the model merge remains durable rather than taking an
       // in-memory-only remote branch because the raw environment is truthy.
-      TELEPATHY_HERMES_URL: "   ",
-      TELEPATHY_META_MODEL: "deterministic-meta-regression-model",
-      TELEPATHY_META_BASE_URL: probe.url,
+      TELEPATHOS_HERMES_URL: "   ",
+      TELEPATHOS_META_MODEL: "deterministic-meta-regression-model",
+      TELEPATHOS_META_BASE_URL: probe.url,
     });
-    turn = await beginMetaUtterance(wsPort, "telepathy:direct", "turn-meta-api-mutation");
+    turn = await beginMetaUtterance(wsPort, "telepathos:direct", "turn-meta-api-mutation");
     await probe.firstRequest;
 
     // Both mutations happen while runMetaAgent is still awaiting its first
@@ -460,12 +460,12 @@ async function testMetaModelProposalPreservesConcurrentApiMutation() {
     // a second API switch makes the final selection and previousId explicit;
     // the touch exercises a concurrent non-selection field update as well.
     await postLocalJson(apiPort, "/api/lanes", { name: "api-added" });
-    await postLocalJson(apiPort, "/api/lanes/active", { id: "telepathy:repo:lane-b" });
-    await postLocalJson(apiPort, "/api/lanes/touch", { id: "telepathy:repo:lane-b" });
+    await postLocalJson(apiPort, "/api/lanes/active", { id: "telepathos:repo:lane-b" });
+    await postLocalJson(apiPort, "/api/lanes/touch", { id: "telepathos:repo:lane-b" });
     const during = await (await fetch(`http://127.0.0.1:${apiPort}/api/state`)).json();
     assert.equal(during.active, "lane-b");
-    assert.equal(during.previousId, "telepathy:repo:api-added");
-    const duringLaneB = during.lanes.find((lane) => lane.id === "telepathy:repo:lane-b");
+    assert.equal(during.previousId, "telepathos:repo:api-added");
+    const duringLaneB = during.lanes.find((lane) => lane.id === "telepathos:repo:lane-b");
     assert.notEqual(duringLaneB?.lastActive, "2020-01-01T00:00:00.000Z");
 
     // Releasing the exact deferred request lets the model's private proposal
@@ -476,10 +476,10 @@ async function testMetaModelProposalPreservesConcurrentApiMutation() {
     assert.equal(probe.requests.length, 2, "the deterministic model completed its tool round");
     const state = await (await fetch(`http://127.0.0.1:${apiPort}/api/state`)).json();
     assert.equal(state.active, "lane-b");
-    assert.equal(state.activeId, "telepathy:repo:lane-b");
-    assert.equal(state.previousId, "telepathy:repo:api-added");
+    assert.equal(state.activeId, "telepathos:repo:lane-b");
+    assert.equal(state.previousId, "telepathos:repo:api-added");
     assert.equal(
-      state.lanes.find((lane) => lane.id === "telepathy:repo:lane-b")?.lastActive,
+      state.lanes.find((lane) => lane.id === "telepathos:repo:lane-b")?.lastActive,
       duringLaneB.lastActive,
     );
     assert.deepEqual(
@@ -487,8 +487,8 @@ async function testMetaModelProposalPreservesConcurrentApiMutation() {
       ["api-added", "direct", "lane-b", "model-added"],
     );
     const durable = JSON.parse(readFileSync(lanesPath, "utf8"));
-    assert.equal(durable.active_id, "telepathy:repo:lane-b");
-    assert.equal(durable.previous_id, "telepathy:repo:api-added");
+    assert.equal(durable.active_id, "telepathos:repo:lane-b");
+    assert.equal(durable.previous_id, "telepathos:repo:api-added");
     assert(durable.lanes.some((lane) => lane.name === "api-added"));
     assert(durable.lanes.some((lane) => lane.name === "model-added"));
   } finally {
@@ -501,18 +501,18 @@ async function testMetaModelProposalPreservesConcurrentApiMutation() {
 }
 
 async function testMetaModelProposalPreservesAbaSelection() {
-  const directory = mkdtempSync(join(tmpdir(), "telepathy-meta-proposal-aba-"));
+  const directory = mkdtempSync(join(tmpdir(), "telepathos-meta-proposal-aba-"));
   const lanesPath = join(directory, "lanes.json");
   const wsPort = await freePort();
   const apiPort = await freePort();
   writeFileSync(lanesPath, JSON.stringify({
     lanes: [
-      { id: "telepathy:direct", name: "direct", created_at: "2020-01-01T00:00:00.000Z", last_active: "2020-01-01T00:00:00.000Z" },
-      { id: "telepathy:repo:lane-b", name: "lane-b", created_at: "2020-01-01T00:00:00.000Z", last_active: "2020-01-01T00:00:00.000Z" },
-      { id: "telepathy:repo:lane-c", name: "lane-c", created_at: "2020-01-01T00:00:00.000Z", last_active: "2020-01-01T00:00:00.000Z" },
+      { id: "telepathos:direct", name: "direct", created_at: "2020-01-01T00:00:00.000Z", last_active: "2020-01-01T00:00:00.000Z" },
+      { id: "telepathos:repo:lane-b", name: "lane-b", created_at: "2020-01-01T00:00:00.000Z", last_active: "2020-01-01T00:00:00.000Z" },
+      { id: "telepathos:repo:lane-c", name: "lane-c", created_at: "2020-01-01T00:00:00.000Z", last_active: "2020-01-01T00:00:00.000Z" },
     ],
-    active_id: "telepathy:direct",
-    previous_id: "telepathy:repo:lane-b",
+    active_id: "telepathos:direct",
+    previous_id: "telepathos:repo:lane-b",
   }));
   const probe = await startMetaModelProbe({
     id: "model-switch",
@@ -522,37 +522,37 @@ async function testMetaModelProposalPreservesAbaSelection() {
   let turn;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: "",
-      TELEPATHY_META_MODEL: "deterministic-meta-regression-model",
-      TELEPATHY_META_BASE_URL: probe.url,
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: "",
+      TELEPATHOS_META_MODEL: "deterministic-meta-regression-model",
+      TELEPATHOS_META_BASE_URL: probe.url,
     });
-    turn = await beginMetaUtterance(wsPort, "telepathy:direct", "turn-meta-aba");
+    turn = await beginMetaUtterance(wsPort, "telepathos:direct", "turn-meta-aba");
     await probe.firstRequest;
 
     // The API performs A→B→A while the model still owns an A snapshot. Both
     // final selection fields exactly equal the captured base, so structural
     // three-way comparison alone cannot see this true ABA transition.
-    await postLocalJson(apiPort, "/api/lanes/active", { id: "telepathy:repo:lane-b" });
-    await postLocalJson(apiPort, "/api/lanes/active", { id: "telepathy:direct" });
+    await postLocalJson(apiPort, "/api/lanes/active", { id: "telepathos:repo:lane-b" });
+    await postLocalJson(apiPort, "/api/lanes/active", { id: "telepathos:direct" });
     const during = await (await fetch(`http://127.0.0.1:${apiPort}/api/state`)).json();
-    assert.equal(during.activeId, "telepathy:direct");
-    assert.equal(during.previousId, "telepathy:repo:lane-b");
+    assert.equal(during.activeId, "telepathos:direct");
+    assert.equal(during.previousId, "telepathos:repo:lane-b");
 
     probe.releaseFirst();
     await turn.done;
     assert.equal(probe.requests.length, 2);
     const state = await (await fetch(`http://127.0.0.1:${apiPort}/api/state`)).json();
-    assert.equal(state.activeId, "telepathy:direct");
+    assert.equal(state.activeId, "telepathos:direct");
     assert.equal(state.active, "direct");
-    assert.equal(state.previousId, "telepathy:repo:lane-b");
+    assert.equal(state.previousId, "telepathos:repo:lane-b");
     const durable = JSON.parse(readFileSync(lanesPath, "utf8"));
-    assert.equal(durable.active_id, "telepathy:direct");
-    assert.equal(durable.previous_id, "telepathy:repo:lane-b");
+    assert.equal(durable.active_id, "telepathos:direct");
+    assert.equal(durable.previous_id, "telepathos:repo:lane-b");
   } finally {
     probe.releaseFirst();
     turn?.ws.terminate();
@@ -563,7 +563,7 @@ async function testMetaModelProposalPreservesAbaSelection() {
 }
 
 async function sendUtterance(port, {
-  laneId = "telepathy:direct",
+  laneId = "telepathos:direct",
   revision = 0,
   includeRevision = true,
   turnToken = `turn-${process.pid}-${Date.now()}`,
@@ -613,18 +613,18 @@ async function sendUtterance(port, {
 async function testSttFailureFailsClosed() {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const lanesPath = `/tmp/telepathy-server-interactions-${process.pid}-failure.json`;
+  const lanesPath = `/tmp/telepathos-server-interactions-${process.pid}-failure.json`;
   const probe = await startHermesProbe();
   let bridge;
   const sttSecret = "regression-invalid-backend-secret";
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: sttSecret,
-      TELEPATHY_HERMES_URL: probe.url,
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: sttSecret,
+      TELEPATHOS_HERMES_URL: probe.url,
     });
     const events = await sendUtterance(wsPort);
     assert(events.some((event) => event.type === "error" && event.message === "stt provider unavailable"));
@@ -642,22 +642,22 @@ async function testSttFailureFailsClosed() {
 async function testVoiceInteractionPersistsLaneActivity() {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const lanesPath = `/tmp/telepathy-server-interactions-${process.pid}-lane.json`;
+  const lanesPath = `/tmp/telepathos-server-interactions-${process.pid}-lane.json`;
   const oldLastActive = "2020-01-01T00:00:00.000Z";
   writeFileSync(lanesPath, JSON.stringify({
-    lanes: [{ id: "telepathy:direct", name: "direct", created_at: oldLastActive, last_active: oldLastActive, interactions: 4 }],
-    active_id: "telepathy:direct",
-    previous_id: "telepathy:direct",
+    lanes: [{ id: "telepathos:direct", name: "direct", created_at: oldLastActive, last_active: oldLastActive, interactions: 4 }],
+    active_id: "telepathos:direct",
+    previous_id: "telepathos:direct",
   }));
   let bridge;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: "",
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: "",
     });
     const events = await sendUtterance(wsPort);
     assert(events.some((event) => event.type === "agent_delta" && event.text.includes("transcription unavailable")));
@@ -671,27 +671,27 @@ async function testVoiceInteractionPersistsLaneActivity() {
 }
 
 async function testStandaloneLaneSaveFailureRecoversFsm() {
-  const directory = mkdtempSync(join(tmpdir(), "telepathy-lane-save-failure-"));
+  const directory = mkdtempSync(join(tmpdir(), "telepathos-lane-save-failure-"));
   const blockedDirectory = `${directory}-blocked`;
   const lanesPath = join(directory, "lanes.json");
   const wsPort = await freePort();
   const apiPort = await freePort();
   const oldLastActive = "2020-01-01T00:00:00.000Z";
   writeFileSync(lanesPath, JSON.stringify({
-    lanes: [{ id: "telepathy:direct", name: "direct", created_at: oldLastActive, last_active: oldLastActive, interactions: 4 }],
-    active_id: "telepathy:direct",
-    previous_id: "telepathy:direct",
+    lanes: [{ id: "telepathos:direct", name: "direct", created_at: oldLastActive, last_active: oldLastActive, interactions: 4 }],
+    active_id: "telepathos:direct",
+    previous_id: "telepathos:direct",
   }));
   let bridge;
   let blocked = false;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: "",
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: "",
     });
 
     // The bridge has already loaded its registry.  Make only later writes
@@ -733,22 +733,22 @@ async function testStandaloneLaneSaveFailureRecoversFsm() {
 async function testRemoteInteractionIdsRemainUniqueAcrossReconnects() {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const lanesPath = `/tmp/telepathy-server-interactions-${process.pid}-interaction-id-reconnect.json`;
+  const lanesPath = `/tmp/telepathos-server-interactions-${process.pid}-interaction-id-reconnect.json`;
   const probe = await startInteractionLedgerProbe();
   let bridge;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
     });
 
     await sendUtterance(wsPort, { turnToken: "turn-reconnect-first" });
     await waitForCondition(() => probe.interactions.size === 1, "first accepted interaction record");
-    // telepathyd's idempotency key includes immutable creation metadata. Make
+    // telepathosd's idempotency key includes immutable creation metadata. Make
     // this an unambiguously new completed turn, not a retry of the first.
     await sleep(20);
 
@@ -758,7 +758,7 @@ async function testRemoteInteractionIdsRemainUniqueAcrossReconnects() {
     const records = [...probe.interactions.values()];
     assert.equal(records.length, 2);
     assert.notEqual(records[0].interaction_id, records[1].interaction_id);
-    assert(records.every((record) => record.id === "telepathy:direct"));
+    assert(records.every((record) => record.id === "telepathos:direct"));
   } finally {
     if (bridge) await stopBridge(bridge);
     await new Promise((resolve) => probe.server.close(resolve));
@@ -770,16 +770,16 @@ async function testRemoteInteractionIdsRemainUniqueAcrossReconnects() {
 async function testRemoteRejectsUnsnapshottedLane() {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const lanesPath = `/tmp/telepathy-server-interactions-${process.pid}-snapshot.json`;
+  const lanesPath = `/tmp/telepathos-server-interactions-${process.pid}-snapshot.json`;
   const probe = await startHermesProbe();
   let bridge;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
     });
     const events = await sendUtterance(wsPort, { includeRevision: false });
     assert(events.some((event) => event.type === "error" && event.message === "lane snapshot required"));
@@ -803,7 +803,7 @@ async function testCapturePreparationDeadlineFencesValidationAndAudio() {
 
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const lanesPath = `/tmp/telepathy-server-interactions-${process.pid}-capture-deadline.json`;
+  const lanesPath = `/tmp/telepathos-server-interactions-${process.pid}-capture-deadline.json`;
   const outboxPath = `${lanesPath}.interaction-outbox.json`;
   let delayed = true;
   const probe = await startHermesProbe({ stateDelayMs: () => delayed ? 100 : 0 });
@@ -811,12 +811,12 @@ async function testCapturePreparationDeadlineFencesValidationAndAudio() {
   let ws;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
-      TELEPATHY_CAPTURE_PREPARATION_DEADLINE_MS: "30",
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
+      TELEPATHOS_CAPTURE_PREPARATION_DEADLINE_MS: "30",
     });
     ws = new WebSocket(`ws://127.0.0.1:${wsPort}`);
     const events = [];
@@ -831,7 +831,7 @@ async function testCapturePreparationDeadlineFencesValidationAndAudio() {
 
     // Validation outlives the deadline. The timer must be armed before the
     // await, and its stale continuation must not reserve after timeout.
-    ws.send(JSON.stringify({ type: "lane", id: "telepathy:direct", revision: 0, turn_token: "turn-timeout-before-validation" }));
+    ws.send(JSON.stringify({ type: "lane", id: "telepathos:direct", revision: 0, turn_token: "turn-timeout-before-validation" }));
     await waitForEvent(events, 0, (event) => event.type === "error" && event.message === "capture preparation timed out",
       "capture preparation timeout");
     await waitForCondition(() => probe.stateCalls() >= 1, "delayed lane validation");
@@ -842,7 +842,7 @@ async function testCapturePreparationDeadlineFencesValidationAndAudio() {
     // its own timeout cancels exactly that reservation.
     delayed = false;
     const secondStart = events.length;
-    ws.send(JSON.stringify({ type: "lane", id: "telepathy:direct", revision: 0, turn_token: "turn-timeout-after-validation" }));
+    ws.send(JSON.stringify({ type: "lane", id: "telepathos:direct", revision: 0, turn_token: "turn-timeout-after-validation" }));
     await waitForCondition(() => existsSync(outboxPath) &&
       JSON.parse(readFileSync(outboxPath, "utf8")).records.length === 1,
     "validated remote reservation");
@@ -854,7 +854,7 @@ async function testCapturePreparationDeadlineFencesValidationAndAudio() {
     // Audio fences the exact preparation before its deadline. The reservation
     // must survive the deadline until the existing explicit cancellation path
     // is used.
-    ws.send(JSON.stringify({ type: "lane", id: "telepathy:direct", revision: 0, turn_token: "turn-audio-started" }));
+    ws.send(JSON.stringify({ type: "lane", id: "telepathos:direct", revision: 0, turn_token: "turn-audio-started" }));
     await waitForCondition(() => existsSync(outboxPath) &&
       JSON.parse(readFileSync(outboxPath, "utf8")).records.length === 1,
     "audio-turn reservation");
@@ -877,7 +877,7 @@ async function testCapturePreparationDeadlineFencesValidationAndAudio() {
 }
 
 async function testReservationCleanupRunsBeforeCapacityPreflight() {
-  const directory = mkdtempSync(join(tmpdir(), "telepathy-remote-reservation-recovery-"));
+  const directory = mkdtempSync(join(tmpdir(), "telepathos-remote-reservation-recovery-"));
   const lanesPath = join(directory, "lanes.json");
   const outboxPath = `${lanesPath}.interaction-outbox.json`;
   const wsPort = await freePort();
@@ -887,15 +887,15 @@ async function testReservationCleanupRunsBeforeCapacityPreflight() {
   let ws;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
-      TELEPATHY_INTERACTION_OUTBOX_MAX: "1",
-      TELEPATHY_CAPTURE_PREPARATION_DEADLINE_MS: "60000",
-      TELEPATHY_TEST_FAIL_NEXT_INTERACTION_OUTBOX_CANCEL_BEFORE_RENAME: "1",
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
+      TELEPATHOS_INTERACTION_OUTBOX_MAX: "1",
+      TELEPATHOS_CAPTURE_PREPARATION_DEADLINE_MS: "60000",
+      TELEPATHOS_TEST_FAIL_NEXT_INTERACTION_OUTBOX_CANCEL_BEFORE_RENAME: "1",
     });
     ws = new WebSocket(`ws://127.0.0.1:${wsPort}`);
     const events = [];
@@ -909,7 +909,7 @@ async function testReservationCleanupRunsBeforeCapacityPreflight() {
     await completeHello(ws);
 
     const firstTurn = "turn-reservation-cleanup-first";
-    ws.send(JSON.stringify({ type: "lane", id: "telepathy:direct", revision: 0, turn_token: firstTurn }));
+    ws.send(JSON.stringify({ type: "lane", id: "telepathos:direct", revision: 0, turn_token: firstTurn }));
     await waitForCondition(() => existsSync(outboxPath) &&
       JSON.parse(readFileSync(outboxPath, "utf8")).records.length === 1,
     "first capacity reservation");
@@ -931,7 +931,7 @@ async function testReservationCleanupRunsBeforeCapacityPreflight() {
     // promoted or emitted as a remote side effect.
     const secondTurn = "turn-reservation-cleanup-second";
     const eventStart = events.length;
-    ws.send(JSON.stringify({ type: "lane", id: "telepathy:direct", revision: 0, turn_token: secondTurn }));
+    ws.send(JSON.stringify({ type: "lane", id: "telepathos:direct", revision: 0, turn_token: secondTurn }));
     await waitForCondition(() => {
       if (!existsSync(outboxPath)) return false;
       const records = JSON.parse(readFileSync(outboxPath, "utf8")).records;
@@ -955,11 +955,11 @@ async function testReservationCleanupRunsBeforeCapacityPreflight() {
 async function testLostAgentEndReplaysBeforePendingNarrationAndSurvivesRestart() {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const lanesPath = `/tmp/telepathy-server-interactions-${process.pid}-lost-agent-end.json`;
+  const lanesPath = `/tmp/telepathos-server-interactions-${process.pid}-lost-agent-end.json`;
   const ackPath = `${lanesPath}.reply-ack-bindings.json`;
   const probe = await startDelayedDeliveryAckProbe();
   const receipt = {
-    lane_id: "telepathy:direct",
+    lane_id: "telepathos:direct",
     reply_to: "tp-lost-agent-end",
     after_seq: 1,
     through_seq: 2,
@@ -988,12 +988,12 @@ async function testLostAgentEndReplaysBeforePendingNarrationAndSurvivesRestart()
   let thirdSocket;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
     });
     firstSocket = new WebSocket(`ws://127.0.0.1:${wsPort}`);
     const firstEvents = [];
@@ -1020,12 +1020,12 @@ async function testLostAgentEndReplaysBeforePendingNarrationAndSurvivesRestart()
     firstSocket.terminate();
     await stopBridge(bridge);
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
     });
     secondSocket = new WebSocket(`ws://127.0.0.1:${wsPort}`);
     const secondEvents = [];
@@ -1074,12 +1074,12 @@ async function testLostAgentEndReplaysBeforePendingNarrationAndSurvivesRestart()
     secondSocket.terminate();
     await stopBridge(bridge);
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
     });
     thirdSocket = new WebSocket(`ws://127.0.0.1:${wsPort}`);
     const thirdEvents = [];
@@ -1118,12 +1118,12 @@ async function testLostAgentEndReplaysBeforePendingNarrationAndSurvivesRestart()
 async function testReplyReceiptsRequireInstallationOwner() {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const lanesPath = `/tmp/telepathy-server-interactions-${process.pid}-receipt-owner.json`;
+  const lanesPath = `/tmp/telepathos-server-interactions-${process.pid}-receipt-owner.json`;
   const ackPath = `${lanesPath}.reply-ack-bindings.json`;
   const ownerA = "owner-a-installation";
   const ownerB = "owner-b-installation";
   const receipt = {
-    lane_id: "telepathy:direct",
+    lane_id: "telepathos:direct",
     reply_to: "tp-receipt-owner",
     after_seq: 10,
     through_seq: 11,
@@ -1151,12 +1151,12 @@ async function testReplyReceiptsRequireInstallationOwner() {
   let recoveredOwnerSocket;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
     });
     const openSocket = async () => {
       const socket = new WebSocket(`ws://127.0.0.1:${wsPort}`);
@@ -1266,12 +1266,12 @@ async function testReplyReceiptsRequireInstallationOwner() {
 async function testAbandonedReplyAckOwnerReconcilesToRotatedInstallation() {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const lanesPath = `/tmp/telepathy-server-interactions-${process.pid}-reply-ack-rotation.json`;
+  const lanesPath = `/tmp/telepathos-server-interactions-${process.pid}-reply-ack-rotation.json`;
   const ackPath = `${lanesPath}.reply-ack-bindings.json`;
   const ownerA = "rotated-owner-a";
   const ownerB = "rotated-owner-b";
   const receipt = {
-    lane_id: "telepathy:direct",
+    lane_id: "telepathos:direct",
     reply_to: "tp-rotated-owner",
     after_seq: 20,
     through_seq: 21,
@@ -1299,13 +1299,13 @@ async function testAbandonedReplyAckOwnerReconcilesToRotatedInstallation() {
   let lateOldSocket;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
-      TELEPATHY_REPLY_ACK_ABANDONMENT_MS: "80",
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
+      TELEPATHOS_REPLY_ACK_ABANDONMENT_MS: "80",
     });
     const open = async (installationId) => {
       const events = [];
@@ -1389,12 +1389,12 @@ async function testAbandonedReplyAckOwnerReconcilesToRotatedInstallation() {
 async function testReplyAckOwnerClockRollbackPreservesHighWaterMarkAcrossRestart() {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const lanesPath = `/tmp/telepathy-server-interactions-${process.pid}-reply-ack-clock-rollback.json`;
+  const lanesPath = `/tmp/telepathos-server-interactions-${process.pid}-reply-ack-clock-rollback.json`;
   const ackPath = `${lanesPath}.reply-ack-bindings.json`;
   const ownerA = "clock-rollback-owner-a";
   const ownerB = "clock-rollback-owner-b";
   const receipt = {
-    lane_id: "telepathy:direct",
+    lane_id: "telepathos:direct",
     reply_to: "tp-clock-rollback",
     after_seq: 30,
     through_seq: 31,
@@ -1422,12 +1422,12 @@ async function testReplyAckOwnerClockRollbackPreservesHighWaterMarkAcrossRestart
   let competitorSocket;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_REPLY_ACK_ABANDONMENT_MS: "80",
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_REPLY_ACK_ABANDONMENT_MS: "80",
     });
 
     const ownerEvents = [];
@@ -1457,12 +1457,12 @@ async function testReplyAckOwnerClockRollbackPreservesHighWaterMarkAcrossRestart
 
     await stopBridge(bridge);
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_REPLY_ACK_ABANDONMENT_MS: "80",
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_REPLY_ACK_ABANDONMENT_MS: "80",
     });
 
     // Give the buggy lower timestamp enough time to pass the abandonment
@@ -1498,11 +1498,11 @@ async function testReplyAckOwnerClockRollbackPreservesHighWaterMarkAcrossRestart
 async function testExpiredConsumedReplyAcksReclaimCapacity() {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const lanesPath = `/tmp/telepathy-server-interactions-${process.pid}-reply-ack-expiry.json`;
+  const lanesPath = `/tmp/telepathos-server-interactions-${process.pid}-reply-ack-expiry.json`;
   const ackPath = `${lanesPath}.reply-ack-bindings.json`;
   const now = Date.now() - 10_000;
   const bindings = Array.from({ length: 64 }, (_, index) => ({
-    lane_id: "telepathy:direct",
+    lane_id: "telepathos:direct",
     reply_to: `tp-expired-${index}`,
     after_seq: index * 2,
     through_seq: index * 2 + 1,
@@ -1521,13 +1521,13 @@ async function testExpiredConsumedReplyAcksReclaimCapacity() {
   let bridge;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
-      TELEPATHY_REPLY_ACK_CONSUMED_RETENTION_MS: "50",
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
+      TELEPATHOS_REPLY_ACK_CONSUMED_RETENTION_MS: "50",
     });
     await waitForCondition(
       () => JSON.parse(readFileSync(ackPath, "utf8")).bindings.length === 0,
@@ -1548,12 +1548,12 @@ async function testExpiredConsumedReplyAcksReclaimCapacity() {
 async function testReplyAckTombstoneCapacityFailsClosed() {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const directory = mkdtempSync(join(tmpdir(), "telepathy-reply-ack-tombstone-capacity-"));
+  const directory = mkdtempSync(join(tmpdir(), "telepathos-reply-ack-tombstone-capacity-"));
   const lanesPath = join(directory, "lanes.json");
   const ackPath = `${lanesPath}.reply-ack-bindings.json`;
   const now = Date.now();
   const bindings = Array.from({ length: 64 }, (_, index) => ({
-    lane_id: "telepathy:direct",
+    lane_id: "telepathos:direct",
     reply_to: `tp-full-live-${index}`,
     after_seq: index * 2,
     through_seq: index * 2 + 1,
@@ -1569,7 +1569,7 @@ async function testReplyAckTombstoneCapacityFailsClosed() {
   }));
   const tombstones = Array.from({ length: MAX_STORED_REPLY_ACK_TOMBSTONES }, (_, index) => ({
     installation_id: "offline-consumed-owner",
-    lane_id: "telepathy:direct",
+    lane_id: "telepathos:direct",
     reply_to: `tp-unexpired-terminal-${index}`,
     after_seq: 10_000 + index * 2,
     through_seq: 10_001 + index * 2,
@@ -1583,14 +1583,14 @@ async function testReplyAckTombstoneCapacityFailsClosed() {
   let bridge;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
-      TELEPATHY_REPLY_ACK_CONSUMED_RETENTION_MS: "50",
-      TELEPATHY_REPLY_ACK_TOMBSTONE_RETENTION_MS: "5000",
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
+      TELEPATHOS_REPLY_ACK_CONSUMED_RETENTION_MS: "50",
+      TELEPATHOS_REPLY_ACK_TOMBSTONE_RETENTION_MS: "5000",
     });
     await waitForBridgeOutput(
       bridge,
@@ -1624,7 +1624,7 @@ async function testReplyAckTombstoneCapacityFailsClosed() {
 async function testReplyAckTombstoneSweepIsAtomicAndRestartSafe() {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const directory = mkdtempSync(join(tmpdir(), "telepathy-reply-ack-tombstone-sweep-"));
+  const directory = mkdtempSync(join(tmpdir(), "telepathos-reply-ack-tombstone-sweep-"));
   const lanesPath = join(directory, "lanes.json");
   const ackPath = `${lanesPath}.reply-ack-bindings.json`;
   const now = Date.now();
@@ -1632,7 +1632,7 @@ async function testReplyAckTombstoneSweepIsAtomicAndRestartSafe() {
     const sequenceIndex = typeof index === "number" ? index : 1_000;
     return {
       installation_id: "late-ack-sweep-owner",
-      lane_id: "telepathy:direct",
+      lane_id: "telepathos:direct",
       reply_to: `tp-sweep-terminal-${index}`,
       after_seq: 20_000 + sequenceIndex * 2,
       through_seq: 20_001 + sequenceIndex * 2,
@@ -1643,7 +1643,7 @@ async function testReplyAckTombstoneSweepIsAtomicAndRestartSafe() {
     };
   };
   const binding = (index) => ({
-    lane_id: "telepathy:direct",
+    lane_id: "telepathos:direct",
     reply_to: `tp-sweep-live-${index}`,
     after_seq: 30_000 + index * 2,
     through_seq: 30_001 + index * 2,
@@ -1670,14 +1670,14 @@ async function testReplyAckTombstoneSweepIsAtomicAndRestartSafe() {
   let socket;
   try {
     const env = {
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
-      TELEPATHY_REPLY_ACK_CONSUMED_RETENTION_MS: "50",
-      TELEPATHY_REPLY_ACK_TOMBSTONE_RETENTION_MS: "5000",
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
+      TELEPATHOS_REPLY_ACK_CONSUMED_RETENTION_MS: "50",
+      TELEPATHOS_REPLY_ACK_TOMBSTONE_RETENTION_MS: "5000",
     };
     bridge = await startBridge(env);
     await waitForCondition(() => {
@@ -1722,7 +1722,7 @@ async function testReplyAckTombstoneSweepIsAtomicAndRestartSafe() {
     });
     await completeHello(socket, null, "late-ack-sweep-owner");
     const receipt = {
-      lane_id: "telepathy:direct",
+      lane_id: "telepathos:direct",
       reply_to: "tp-sweep-live-0",
       after_seq: 30_000,
       through_seq: 30_001,
@@ -1731,7 +1731,7 @@ async function testReplyAckTombstoneSweepIsAtomicAndRestartSafe() {
     };
     socket.send(JSON.stringify({ type: "reply_ack", ...receipt }));
     await waitForEvent(events, 0, (event) => event.type === "reply_acknowledged", "late exact reply acknowledgement");
-    assert.equal(probe.acknowledgeRequests(), 0, "a late tombstone ack must not re-consume telepathyd");
+    assert.equal(probe.acknowledgeRequests(), 0, "a late tombstone ack must not re-consume telepathosd");
     socket.send(JSON.stringify({ type: "reply_ack_retire", ...receipt }));
     await waitForEvent(events, 0, (event) => event.type === "reply_ack_retired", "exact tombstone retirement");
     assert.equal(JSON.parse(readFileSync(ackPath, "utf8")).tombstones.length, 63,
@@ -1747,11 +1747,11 @@ async function testReplyAckTombstoneSweepIsAtomicAndRestartSafe() {
 async function testReclaimedConsumedReplyAckTombstoneSurvivesRestart() {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const lanesPath = `/tmp/telepathy-server-interactions-${process.pid}-reply-ack-tombstone.json`;
+  const lanesPath = `/tmp/telepathos-server-interactions-${process.pid}-reply-ack-tombstone.json`;
   const ackPath = `${lanesPath}.reply-ack-bindings.json`;
   const owner = "late-ack-original-owner";
   const receipt = {
-    lane_id: "telepathy:direct",
+    lane_id: "telepathos:direct",
     reply_to: "tp-late-after-retention",
     after_seq: 90,
     through_seq: 91,
@@ -1781,14 +1781,14 @@ async function testReclaimedConsumedReplyAckTombstoneSurvivesRestart() {
   let foreignSocket;
   try {
     const env = {
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
-      TELEPATHY_REPLY_ACK_CONSUMED_RETENTION_MS: "50",
-      TELEPATHY_REPLY_ACK_TOMBSTONE_RETENTION_MS: "5000",
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
+      TELEPATHOS_REPLY_ACK_CONSUMED_RETENTION_MS: "50",
+      TELEPATHOS_REPLY_ACK_TOMBSTONE_RETENTION_MS: "5000",
     };
     bridge = await startBridge(env);
     socket = new WebSocket(`ws://127.0.0.1:${wsPort}`);
@@ -1820,7 +1820,7 @@ async function testReclaimedConsumedReplyAckTombstoneSurvivesRestart() {
     assert(!events.some((event) => event.type === "reply_acknowledged"));
     socket.send(JSON.stringify({ type: "reply_ack", ...receipt }));
     await waitForEvent(events, 0, (event) => event.type === "reply_acknowledged", "late tombstone acknowledgement");
-    assert.equal(probe.acknowledgeRequests(), 0, "late tombstone ack must not re-consume telepathyd");
+    assert.equal(probe.acknowledgeRequests(), 0, "late tombstone ack must not re-consume telepathosd");
     socket.close();
     await new Promise((resolve) => socket.once("close", resolve));
     await stopBridge(bridge);
@@ -1854,17 +1854,17 @@ async function testReclaimedConsumedReplyAckTombstoneSurvivesRestart() {
 async function testStopCancelsRemoteWait(command = "stop") {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const lanesPath = `/tmp/telepathy-server-interactions-${process.pid}-${command}.json`;
+  const lanesPath = `/tmp/telepathos-server-interactions-${process.pid}-${command}.json`;
   const probe = await startHermesProbe();
   let bridge;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
-      TELEPATHY_HERMES_TIMEOUT: "60000",
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
+      TELEPATHOS_HERMES_TIMEOUT: "60000",
     });
     const ws = new WebSocket(`ws://127.0.0.1:${wsPort}`);
     const turnToken = `turn-${command}`;
@@ -1890,7 +1890,7 @@ async function testStopCancelsRemoteWait(command = "stop") {
           resolve({ stopSent, elapsed: Date.now() - stopAt });
         }
       });
-      ws.send(JSON.stringify({ type: "lane", id: "telepathy:direct", revision: 0, turn_token: turnToken }));
+      ws.send(JSON.stringify({ type: "lane", id: "telepathos:direct", revision: 0, turn_token: turnToken }));
       const loud = Buffer.alloc(3200);
       for (let i = 0; i < 1600; i++) loud.writeInt16LE((i % 20) < 10 ? 8000 : -8000, i * 2);
       for (let n = 0; n < 10; n++) ws.send(loud);
@@ -1915,16 +1915,16 @@ async function testStopCancelsRemoteWait(command = "stop") {
 async function testEarlyStopResetsVad() {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const lanesPath = `/tmp/telepathy-server-interactions-${process.pid}-early-stop.json`;
+  const lanesPath = `/tmp/telepathos-server-interactions-${process.pid}-early-stop.json`;
   let bridge;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: "",
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: "",
     });
     const ws = new WebSocket(`ws://127.0.0.1:${wsPort}`);
     const events = [];
@@ -1946,11 +1946,11 @@ async function testEarlyStopResetsVad() {
       for (let i = 0; i < bytes / 2; i++) pcm.writeInt16LE(8000, i * 2);
       return pcm;
     };
-    ws.send(JSON.stringify({ type: "lane", id: "telepathy:direct", revision: 0, turn_token: "turn-early-a" }));
+    ws.send(JSON.stringify({ type: "lane", id: "telepathos:direct", revision: 0, turn_token: "turn-early-a" }));
     ws.send(loud(640));
     await sleep(20);
     ws.send(JSON.stringify({ type: "command", command: "stop", turn_token: "turn-early-a" }));
-    ws.send(JSON.stringify({ type: "lane", id: "telepathy:direct", revision: 0, turn_token: "turn-early-b" }));
+    ws.send(JSON.stringify({ type: "lane", id: "telepathos:direct", revision: 0, turn_token: "turn-early-b" }));
     ws.send(loud(1920));
     await sleep(250);
 
@@ -1966,18 +1966,18 @@ async function testEarlyStopResetsVad() {
 async function testDisconnectCancelsRemotePost() {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const lanesPath = `/tmp/telepathy-server-interactions-${process.pid}-disconnect.json`;
+  const lanesPath = `/tmp/telepathos-server-interactions-${process.pid}-disconnect.json`;
   const probe = await startHermesProbe({ stateDelayMs: 200 });
   let bridge;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
-      TELEPATHY_HERMES_TIMEOUT: "5000",
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
+      TELEPATHOS_HERMES_TIMEOUT: "5000",
     });
     const ws = new WebSocket(`ws://127.0.0.1:${wsPort}`);
     await new Promise((resolve, reject) => {
@@ -1995,7 +1995,7 @@ async function testDisconnectCancelsRemotePost() {
         ws.close();
       }
     });
-    ws.send(JSON.stringify({ type: "lane", id: "telepathy:direct", revision: 0, turn_token: "turn-disconnect" }));
+    ws.send(JSON.stringify({ type: "lane", id: "telepathos:direct", revision: 0, turn_token: "turn-disconnect" }));
     const loud = Buffer.alloc(3200);
     for (let i = 0; i < 1600; i++) loud.writeInt16LE((i % 20) < 10 ? 8000 : -8000, i * 2);
     for (let n = 0; n < 10; n++) ws.send(loud);
@@ -2022,16 +2022,16 @@ async function testDisconnectCancelsRemotePost() {
 async function testTurnTokenRejectsStaleControlAndTagsReplies() {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const lanesPath = `/tmp/telepathy-server-interactions-${process.pid}-turn-token.json`;
+  const lanesPath = `/tmp/telepathos-server-interactions-${process.pid}-turn-token.json`;
   let bridge;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: "",
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: "",
     });
     const ws = new WebSocket(`ws://127.0.0.1:${wsPort}`);
     const events = [];
@@ -2048,13 +2048,13 @@ async function testTurnTokenRejectsStaleControlAndTagsReplies() {
 
     // Untagged legacy lane frames are invalid, and their raw PCM must not
     // start an unbound interaction.
-    ws.send(JSON.stringify({ type: "lane", id: "telepathy:direct", revision: 0 }));
+    ws.send(JSON.stringify({ type: "lane", id: "telepathos:direct", revision: 0 }));
     for (let n = 0; n < 4; n++) ws.send(loud);
     await sleep(150);
     assert(!events.some((event) => event.type === "speech_start"), "legacy capture must be ignored");
 
     const turnToken = "turn-current";
-    ws.send(JSON.stringify({ type: "lane", id: "telepathy:direct", revision: 0, turn_token: turnToken }));
+    ws.send(JSON.stringify({ type: "lane", id: "telepathos:direct", revision: 0, turn_token: turnToken }));
     const firstStart = events.length;
     for (let n = 0; n < 4; n++) ws.send(loud);
     await waitForEvent(events, firstStart,
@@ -2084,7 +2084,7 @@ async function testTurnTokenRejectsStaleControlAndTagsReplies() {
 
     // A stale stop cannot cancel a newer capture, while its matching cancel can.
     const newTurnToken = "turn-new";
-    ws.send(JSON.stringify({ type: "lane", id: "telepathy:direct", revision: 0, turn_token: newTurnToken }));
+    ws.send(JSON.stringify({ type: "lane", id: "telepathos:direct", revision: 0, turn_token: newTurnToken }));
     const captureStart = events.length;
     for (let n = 0; n < 4; n++) ws.send(loud);
     await waitForEvent(events, captureStart,
@@ -2130,7 +2130,7 @@ async function testTurnTokenRejectsStaleControlAndTagsReplies() {
 async function testAuthenticatedHandshake() {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const lanesPath = `/tmp/telepathy-server-interactions-${process.pid}-auth.json`;
+  const lanesPath = `/tmp/telepathos-server-interactions-${process.pid}-auth.json`;
   const configuredToken = "regression-token";
   const equalLengthInvalidToken = "x".repeat(configuredToken.length);
   const differentLengthInvalidToken = "AUTH-LEAK-different-length";
@@ -2139,22 +2139,22 @@ async function testAuthenticatedHandshake() {
   let bridge;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_TOKEN: configuredToken,
-      TELEPATHY_HERMES_URL: "",
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_TOKEN: configuredToken,
+      TELEPATHOS_HERMES_URL: "",
     });
 
     const apiRequest = (headers = {}) => fetch(`http://127.0.0.1:${apiPort}/api/state`, { headers });
-    const validHeader = await apiRequest({ "x-telepathy-token": configuredToken });
+    const validHeader = await apiRequest({ "x-telepathos-token": configuredToken });
     assert.equal(validHeader.status, 200, "the shared-token header authenticates the API");
     const validBearer = await apiRequest({ Authorization: `Bearer ${configuredToken}` });
     assert.equal(validBearer.status, 200, "the Bearer authorization header authenticates the API");
     for (const [label, headers, rawToken] of [
-      ["equal-length invalid header", { "x-telepathy-token": equalLengthInvalidToken }, equalLengthInvalidToken],
-      ["different-length invalid header", { "x-telepathy-token": differentLengthInvalidToken }, differentLengthInvalidToken],
+      ["equal-length invalid header", { "x-telepathos-token": equalLengthInvalidToken }, equalLengthInvalidToken],
+      ["different-length invalid header", { "x-telepathos-token": differentLengthInvalidToken }, differentLengthInvalidToken],
       ["missing header", {}, null],
       ["invalid Bearer token", { Authorization: `Bearer ${differentLengthInvalidToken}` }, differentLengthInvalidToken],
     ]) {
@@ -2229,10 +2229,10 @@ async function testAuthenticatedHandshake() {
 async function testReplyAckRetryAfterConfirmationHandoff() {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const lanesPath = `/tmp/telepathy-server-interactions-${process.pid}-reply-ack.json`;
+  const lanesPath = `/tmp/telepathos-server-interactions-${process.pid}-reply-ack.json`;
   const ackPath = `${lanesPath}.reply-ack-bindings.json`;
   const receipt = {
-    lane_id: "telepathy:direct",
+    lane_id: "telepathos:direct",
     reply_to: "tp-reply-ack",
     after_seq: 4,
     through_seq: 5,
@@ -2259,12 +2259,12 @@ async function testReplyAckRetryAfterConfirmationHandoff() {
   let secondSocket;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
     });
     firstSocket = new WebSocket(`ws://127.0.0.1:${wsPort}`);
     const firstConfirmation = new Promise((resolve) => {
@@ -2317,7 +2317,7 @@ async function testReplyAckRetryAfterConfirmationHandoff() {
     );
     assert.equal(confirmation.turn_token, receipt.turn_token);
     assert.equal(probe.acknowledgeRequests(), 1,
-      "a consumed binding must resend only its bridge confirmation, not repeat telepathyd consumption");
+      "a consumed binding must resend only its bridge confirmation, not repeat telepathosd consumption");
     assert.equal(JSON.parse(readFileSync(ackPath, "utf8")).bindings.length, 1);
 
     // Android persists a terminal retry record before it sends this frame.
@@ -2353,10 +2353,10 @@ async function testReplyAckRetryAfterConfirmationHandoff() {
 async function testReplyAckRetirementReclaimsAllCapacityAcrossBridgeRestart() {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const lanesPath = `/tmp/telepathy-server-interactions-${process.pid}-reply-ack-capacity.json`;
+  const lanesPath = `/tmp/telepathos-server-interactions-${process.pid}-reply-ack-capacity.json`;
   const ackPath = `${lanesPath}.reply-ack-bindings.json`;
   const receipts = Array.from({ length: 64 }, (_, index) => ({
-    lane_id: "telepathy:direct",
+    lane_id: "telepathos:direct",
     reply_to: `tp-capacity-${index}`,
     after_seq: index * 2,
     through_seq: index * 2 + 1,
@@ -2428,12 +2428,12 @@ async function testReplyAckRetirementReclaimsAllCapacityAcrossBridgeRestart() {
   };
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
     });
     ({ socket, events } = await openSocket());
 
@@ -2454,12 +2454,12 @@ async function testReplyAckRetirementReclaimsAllCapacityAcrossBridgeRestart() {
     socket.terminate();
     await stopBridge(bridge);
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
     });
     ({ socket, events } = await openSocket());
     const replayStart = events.length;
@@ -2484,12 +2484,12 @@ async function testReplyAckRetirementReclaimsAllCapacityAcrossBridgeRestart() {
     socket.terminate();
     await stopBridge(bridge);
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
     });
     ({ socket, events } = await openSocket());
     const terminalReplayStart = events.length;
@@ -2515,12 +2515,12 @@ async function testReplyAckRetirementReclaimsAllCapacityAcrossBridgeRestart() {
     await stopBridge(bridge);
     interactionProbe = await startInteractionLedgerProbe();
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: interactionProbe.url,
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: interactionProbe.url,
     });
     const sixtyFifthEvents = await sendUtterance(wsPort, { turnToken: "turn-capacity-64" });
     const sixtyFifthEnd = sixtyFifthEvents.find((event) =>
@@ -2545,7 +2545,7 @@ async function testReplyAckRetirementReclaimsAllCapacityAcrossBridgeRestart() {
 async function testPausedRemoteReplyCannotBeReplayedWithoutReceipt() {
   const wsPort = await freePort();
   const apiPort = await freePort();
-  const directory = mkdtempSync(join(tmpdir(), "telepathy-paused-remote-reply-"));
+  const directory = mkdtempSync(join(tmpdir(), "telepathos-paused-remote-reply-"));
   const lanesPath = join(directory, "lanes.json");
   let releaseReply;
   let markReplyRequested;
@@ -2558,9 +2558,9 @@ async function testPausedRemoteReplyCannotBeReplayedWithoutReceipt() {
       if (req.method === "GET" && req.url === "/api/state") {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({
-          lanes: [{ id: "telepathy:direct", name: "direct", created_at: "2020-01-01", last_active: "2020-01-01" }],
-          active_id: "telepathy:direct",
-          previous_id: "telepathy:direct",
+          lanes: [{ id: "telepathos:direct", name: "direct", created_at: "2020-01-01", last_active: "2020-01-01" }],
+          active_id: "telepathos:direct",
+          previous_id: "telepathos:direct",
           revision: 0,
         }));
         return;
@@ -2595,7 +2595,7 @@ async function testPausedRemoteReplyCannotBeReplayedWithoutReceipt() {
             latest: 1,
             deliveries: [{
               seq: 1,
-              chat_id: "telepathy:direct",
+              chat_id: "telepathos:direct",
               content: "reply whose receipt cannot be persisted",
               reply_to: replyTo,
             }],
@@ -2615,12 +2615,12 @@ async function testPausedRemoteReplyCannotBeReplayedWithoutReceipt() {
   let socket;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: `http://127.0.0.1:${probe.address().port}`,
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: `http://127.0.0.1:${probe.address().port}`,
     });
     socket = new WebSocket(`ws://127.0.0.1:${wsPort}`);
     const events = [];
@@ -2640,7 +2640,7 @@ async function testPausedRemoteReplyCannotBeReplayedWithoutReceipt() {
     socket.send(JSON.stringify({ type: "meta_mode", turn_token: localTurn }));
     socket.send(JSON.stringify({
       type: "lane",
-      id: "telepathy:direct",
+      id: "telepathos:direct",
       revision: 0,
       turn_token: localTurn,
     }));
@@ -2664,7 +2664,7 @@ async function testPausedRemoteReplyCannotBeReplayedWithoutReceipt() {
     const remoteStart = events.length;
     socket.send(JSON.stringify({
       type: "lane",
-      id: "telepathy:direct",
+      id: "telepathos:direct",
       revision: 0,
       turn_token: remoteTurn,
     }));
@@ -2721,13 +2721,13 @@ async function testPausedRemoteReplyCannotBeReplayedWithoutReceipt() {
 }
 
 async function testExpiredInteractionPersistenceFailurePausesAndRetries() {
-  const directory = mkdtempSync(join(tmpdir(), "telepathy-expired-interaction-"));
+  const directory = mkdtempSync(join(tmpdir(), "telepathos-expired-interaction-"));
   const lanesPath = join(directory, "lanes.json");
   const outboxPath = `${lanesPath}.interaction-outbox.json`;
   const wsPort = await freePort();
   const apiPort = await freePort();
   const record = {
-    lane_id: "telepathy:direct",
+    lane_id: "telepathos:direct",
     interaction_id: "expired-interaction",
     interaction_created_at_ms: 1_700_000_000_000,
     state: "pending",
@@ -2738,15 +2738,15 @@ async function testExpiredInteractionPersistenceFailurePausesAndRetries() {
   let socket;
   try {
     bridge = await startBridge({
-      TELEPATHY_PORT: String(wsPort),
-      TELEPATHY_HOST: "127.0.0.1",
-      TELEPATHY_API_PORT: String(apiPort),
-      TELEPATHY_LANES: lanesPath,
-      TELEPATHY_STT: "echo",
-      TELEPATHY_HERMES_URL: probe.url,
+      TELEPATHOS_PORT: String(wsPort),
+      TELEPATHOS_HOST: "127.0.0.1",
+      TELEPATHOS_API_PORT: String(apiPort),
+      TELEPATHOS_LANES: lanesPath,
+      TELEPATHOS_STT: "echo",
+      TELEPATHOS_HERMES_URL: probe.url,
     });
     await probe.firstInteraction;
-    // Force the terminal-state write to fail after telepathyd reports its
+    // Force the terminal-state write to fail after telepathosd reports its
     // bounded dedupe horizon has expired.
     chmodSync(directory, 0o500);
     probe.releaseFirst();
@@ -2769,7 +2769,7 @@ async function testExpiredInteractionPersistenceFailurePausesAndRetries() {
     const eventStart = events.length;
     socket.send(JSON.stringify({
       type: "lane",
-      id: "telepathy:direct",
+      id: "telepathos:direct",
       revision: 0,
       turn_token: "turn-expired-recovery",
     }));

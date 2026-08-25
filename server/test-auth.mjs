@@ -22,7 +22,7 @@ assert.equal(sharedTokenMatches(undefined, configured), false, "a missing config
 assert.equal(sharedTokenMatches("", configured), false, "an empty configured token is not authenticated");
 
 assert.equal(
-  sharedTokenMatches(configured, sharedTokenFromHeaders({ "x-telepathy-token": configured })),
+  sharedTokenMatches(configured, sharedTokenFromHeaders({ "x-telepathos-token": configured })),
   true,
   "the shared-token header is accepted",
 );
@@ -33,14 +33,14 @@ assert.equal(
 );
 assert.equal(
   sharedTokenMatches(configured, sharedTokenFromHeaders({
-    "x-telepathy-token": equalLengthInvalid,
+    "x-telepathos-token": equalLengthInvalid,
     authorization: `Bearer ${configured}`,
   })),
   false,
   "the shared-token header takes precedence over Bearer",
 );
 assert.equal(sharedTokenFromHeaders({}), undefined, "missing headers produce no token");
-assert.equal(sharedTokenFromHeaders({ "x-telepathy-token": [configured] }), undefined, "malformed header values are rejected");
+assert.equal(sharedTokenFromHeaders({ "x-telepathos-token": [configured] }), undefined, "malformed header values are rejected");
 assert.equal(sharedTokenFromHeaders({ authorization: ["Bearer ", configured] }), undefined, "malformed authorization values are rejected");
 assert.equal(sharedTokenFromHeaders({ authorization: configured }), undefined, "non-Bearer authorization is ignored");
 

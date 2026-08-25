@@ -2,9 +2,9 @@ import { appendFileSync } from "node:fs";
 
 /**
  * Live delivery poller: while a phone is connected to the bridge, poll
- * telepathyd's delivery queue and patch new items through to the phone as
+ * telepathosd's delivery queue and patch new items through to the phone as
  * spoken "incoming" announcements. When no phone is connected, stop polling —
- * items stay in telepathyd's durable inbox and are read at the next
+ * items stay in telepathosd's durable inbox and are read at the next
  * double-pinch instead (the inbox path, not the live path).
  */
 
@@ -58,7 +58,7 @@ export function startDeliveryPoller(deps: DeliveryPollerDeps): void {
         });
       }
     } catch {
-      // unreachable telepathyd: silent — the durable queue holds everything
+      // unreachable telepathosd: silent — the durable queue holds everything
     }
   }, 2500);
 }

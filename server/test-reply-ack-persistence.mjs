@@ -20,14 +20,14 @@ const {
   MAX_TURN_TOKEN_LENGTH,
 } = await import("./dist/protocol.js");
 
-const directory = await mkdtemp(join(tmpdir(), "telepathy-reply-ack-persistence-"));
+const directory = await mkdtemp(join(tmpdir(), "telepathos-reply-ack-persistence-"));
 const path = join(directory, "reply-acks.json");
 const legacyPath = join(directory, "legacy-reply-acks.json");
 const targetIdentity = targetIdentityFor(null);
 const first = {
   targetIdentity,
   installationId: "persistence-installation",
-  laneId: "telepathy:direct",
+  laneId: "telepathos:direct",
   replyTo: "tp-stable",
   afterSeq: 2,
   throughSeq: 3,
@@ -43,7 +43,7 @@ const first = {
 const uncertain = {
   targetIdentity,
   installationId: "persistence-installation",
-  laneId: "telepathy:direct",
+  laneId: "telepathos:direct",
   replyTo: "tp-uncertain",
   afterSeq: 4,
   throughSeq: 5,
@@ -72,7 +72,7 @@ const consumed = {
 const tombstone = {
   targetIdentity,
   installationId: "persistence-installation",
-  laneId: "telepathy:direct",
+  laneId: "telepathos:direct",
   replyTo: "tp-tombstone",
   afterSeq: 12,
   throughSeq: 13,
@@ -202,18 +202,18 @@ try {
     tombstones: [],
   }));
   const beforeWrongTarget = await readFile(wrongTargetPath, "utf8");
-  const previousHermesUrl = process.env.TELEPATHY_HERMES_URL;
-  const previousToken = process.env.TELEPATHY_TOKEN;
-  process.env.TELEPATHY_HERMES_URL = "http://localhost:8790";
-  process.env.TELEPATHY_TOKEN = "token-b";
+  const previousHermesUrl = process.env.TELEPATHOS_HERMES_URL;
+  const previousToken = process.env.TELEPATHOS_TOKEN;
+  process.env.TELEPATHOS_HERMES_URL = "http://localhost:8790";
+  process.env.TELEPATHOS_TOKEN = "token-b";
   assert.throws(
     () => new ReplyAckStore(wrongTargetPath).load(),
     /target identity mismatch/,
   );
-  if (previousHermesUrl === undefined) delete process.env.TELEPATHY_HERMES_URL;
-  else process.env.TELEPATHY_HERMES_URL = previousHermesUrl;
-  if (previousToken === undefined) delete process.env.TELEPATHY_TOKEN;
-  else process.env.TELEPATHY_TOKEN = previousToken;
+  if (previousHermesUrl === undefined) delete process.env.TELEPATHOS_HERMES_URL;
+  else process.env.TELEPATHOS_HERMES_URL = previousHermesUrl;
+  if (previousToken === undefined) delete process.env.TELEPATHOS_TOKEN;
+  else process.env.TELEPATHOS_TOKEN = previousToken;
   assert.equal(await readFile(wrongTargetPath, "utf8"), beforeWrongTarget);
 
   // A live endpoint or credential change fences the already-open store. The
@@ -223,18 +223,18 @@ try {
   const runtimeStore = new ReplyAckStore(runtimePath);
   runtimeStore.save([first]);
   const beforeRuntimeSwitch = await readFile(runtimePath, "utf8");
-  const runtimeUrl = process.env.TELEPATHY_HERMES_URL;
-  const runtimeToken = process.env.TELEPATHY_TOKEN;
+  const runtimeUrl = process.env.TELEPATHOS_HERMES_URL;
+  const runtimeToken = process.env.TELEPATHOS_TOKEN;
   try {
-    process.env.TELEPATHY_HERMES_URL = "http://localhost:8791///";
-    process.env.TELEPATHY_TOKEN = "rotated-runtime-token";
+    process.env.TELEPATHOS_HERMES_URL = "http://localhost:8791///";
+    process.env.TELEPATHOS_TOKEN = "rotated-runtime-token";
     assert.throws(() => runtimeStore.load(), /target identity changed/);
     assert.equal(await readFile(runtimePath, "utf8"), beforeRuntimeSwitch);
   } finally {
-    if (runtimeUrl === undefined) delete process.env.TELEPATHY_HERMES_URL;
-    else process.env.TELEPATHY_HERMES_URL = runtimeUrl;
-    if (runtimeToken === undefined) delete process.env.TELEPATHY_TOKEN;
-    else process.env.TELEPATHY_TOKEN = runtimeToken;
+    if (runtimeUrl === undefined) delete process.env.TELEPATHOS_HERMES_URL;
+    else process.env.TELEPATHOS_HERMES_URL = runtimeUrl;
+    if (runtimeToken === undefined) delete process.env.TELEPATHOS_TOKEN;
+    else process.env.TELEPATHOS_TOKEN = runtimeToken;
   }
 
   const store = new ReplyAckStore(path);
@@ -252,12 +252,12 @@ try {
   assert.deepEqual(new ReplyAckStore(path).load(), [atLimit]);
 
   for (const [label, invalid] of [
-    ["lane id with spaces", { ...atLimit, laneId: "telepathy: direct" }],
-    ["lane id with controls", { ...atLimit, laneId: "telepathy:repo:\u0000control" }],
-    ["lane id with quote", { ...atLimit, laneId: 'telepathy:repo:quote"' }],
-    ["lane id with backslash", { ...atLimit, laneId: "telepathy:repo:backslash\\" }],
-    ["oversized lane id", { ...atLimit, laneId: `telepathy:repo:${"a".repeat(128)}` }],
-    ["unicode lane id", { ...atLimit, laneId: "telepathy:repo:é" }],
+    ["lane id with spaces", { ...atLimit, laneId: "telepathos: direct" }],
+    ["lane id with controls", { ...atLimit, laneId: "telepathos:repo:\u0000control" }],
+    ["lane id with quote", { ...atLimit, laneId: 'telepathos:repo:quote"' }],
+    ["lane id with backslash", { ...atLimit, laneId: "telepathos:repo:backslash\\" }],
+    ["oversized lane id", { ...atLimit, laneId: `telepathos:repo:${"a".repeat(128)}` }],
+    ["unicode lane id", { ...atLimit, laneId: "telepathos:repo:é" }],
     ["oversized turn token", { ...atLimit, turnToken: "t".repeat(MAX_TURN_TOKEN_LENGTH + 1) }],
     ["one-over receipt sequence", { ...atLimit, afterSeq: MAX_SAFE_SEQUENCE, throughSeq: MAX_SAFE_SEQUENCE + 1 }],
     ["oversized installation ID", { ...atLimit, installationId: "i".repeat(MAX_INSTALLATION_ID_LENGTH + 1) }],
@@ -292,12 +292,12 @@ try {
   // Tombstones are independently replayed terminal identities and must use
   // the same lane grammar as live bindings.
   for (const [label, laneId] of [
-    ["spaces", "telepathy: direct"],
-    ["controls", "telepathy:repo:\u0001control"],
-    ["quotes", 'telepathy:repo:quote"'],
-    ["backslashes", "telepathy:repo:backslash\\"],
-    ["oversize", `telepathy:repo:${"a".repeat(128)}`],
-    ["unicode", "telepathy:repo:é"],
+    ["spaces", "telepathos: direct"],
+    ["controls", "telepathos:repo:\u0001control"],
+    ["quotes", 'telepathos:repo:quote"'],
+    ["backslashes", "telepathos:repo:backslash\\"],
+    ["oversize", `telepathos:repo:${"a".repeat(128)}`],
+    ["unicode", "telepathos:repo:é"],
   ]) {
     const invalidPath = join(directory, `invalid-tombstone-${label}.json`);
     const original = JSON.stringify({

@@ -1,17 +1,17 @@
 /**
- * Hermes delivery client: sends lane utterances to telepathyd (which pushes
+ * Hermes delivery client: sends lane utterances to telepathosd (which pushes
  * them to the Hermes gateway over the relay), then polls for the agent's
  * replies until they arrive or we time out.
  *
  * Backpressure notes:
  * - Poll interval is 1 s: Hermes thinks for seconds; polling faster is waste.
  * - The cursor only advances on successful fetch; a failed poll retries the
- *   same window (telepathyd keeps unconsumed entries until picked up).
+ *   same window (telepathosd keeps unconsumed entries until picked up).
  */
 import { ReplyTextByteAccumulator, ReplyTextLimitError, isReplyTextWithinLimit } from "./reply-text.js";
 import { isValidLaneId, isValidOpaqueId, MAX_SAFE_SEQUENCE } from "./protocol.js";
 import {
-  normalizeTelepathydBaseUrl,
+  normalizeTelepathosdBaseUrl,
   targetIdentityFor,
 } from "./target-scope.js";
 
@@ -23,7 +23,7 @@ export interface HermesConfig {
   token?: string;
 }
 
-export interface TelepathydLane {
+export interface TelepathosdLane {
   id: string;
   name: string;
   created_at: string;
@@ -31,8 +31,8 @@ export interface TelepathydLane {
   interactions?: number;
 }
 
-export interface TelepathydState {
-  lanes: TelepathydLane[];
+export interface TelepathosdState {
+  lanes: TelepathosdLane[];
   active_id: string;
   previous_id: string;
   revision: number;
@@ -40,24 +40,24 @@ export interface TelepathydState {
 }
 
 /**
- * telepathyd's contracts deliberately keep phone-facing replies below 512 KiB.
+ * telepathosd's contracts deliberately keep phone-facing replies below 512 KiB.
  * Allow a small JSON envelope, but never let a peer choose an unbounded body.
  */
-export const TELEPATHYD_SMALL_RESPONSE_MAX_BYTES = 64 * 1024;
-export const TELEPATHYD_REPLY_RESPONSE_MAX_BYTES = 576 * 1024;
-export const TELEPATHYD_STATE_RESPONSE_MAX_BYTES = 1024 * 1024;
+export const TELEPATHOSD_SMALL_RESPONSE_MAX_BYTES = 64 * 1024;
+export const TELEPATHOSD_REPLY_RESPONSE_MAX_BYTES = 576 * 1024;
+export const TELEPATHOSD_STATE_RESPONSE_MAX_BYTES = 1024 * 1024;
 
-export type TelepathydResponseFailure =
+export type TelepathosdResponseFailure =
   | "too-large"
   | "invalid-utf8"
   | "invalid-json"
   | "read-failed";
 
 /** A deliberately body-free failure suitable for phone/API-facing callers. */
-export class TelepathydResponseError extends Error {
-  constructor(public readonly failure: TelepathydResponseFailure) {
-    super(`telepathyd response ${failure}`);
-    this.name = "TelepathydResponseError";
+export class TelepathosdResponseError extends Error {
+  constructor(public readonly failure: TelepathosdResponseFailure) {
+    super(`telepathosd response ${failure}`);
+    this.name = "TelepathosdResponseError";
   }
 }
 
@@ -73,7 +73,7 @@ function contentLengthExceeds(response: Response, maxBytes: number): boolean {
  * boundaries. The TextDecoder is intentionally fatal and runs once only after
  * the complete, bounded byte sequence has been collected.
  */
-export async function readTelepathydJson(
+export async function readTelepathosdJson(
   response: Response,
   maxBytes: number,
 ): Promise<unknown> {
@@ -82,10 +82,10 @@ export async function readTelepathydJson(
   }
   if (contentLengthExceeds(response, maxBytes)) {
     void response.body?.cancel().catch(() => undefined);
-    throw new TelepathydResponseError("too-large");
+    throw new TelepathosdResponseError("too-large");
   }
   if (response.body === null) {
-    throw new TelepathydResponseError("invalid-json");
+    throw new TelepathosdResponseError("invalid-json");
   }
 
   const reader = response.body.getReader();
@@ -98,14 +98,14 @@ export async function readTelepathydJson(
       const chunk = Buffer.from(value);
       if (chunk.length > maxBytes - total) {
         await reader.cancel().catch(() => undefined);
-        throw new TelepathydResponseError("too-large");
+        throw new TelepathosdResponseError("too-large");
       }
       total += chunk.length;
       chunks.push(chunk);
     }
   } catch (error) {
-    if (error instanceof TelepathydResponseError) throw error;
-    throw new TelepathydResponseError("read-failed");
+    if (error instanceof TelepathosdResponseError) throw error;
+    throw new TelepathosdResponseError("read-failed");
   } finally {
     reader.releaseLock();
   }
@@ -114,38 +114,38 @@ export async function readTelepathydJson(
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks, total));
   } catch {
-    throw new TelepathydResponseError("invalid-utf8");
+    throw new TelepathosdResponseError("invalid-utf8");
   }
   try {
     return JSON.parse(text) as unknown;
   } catch {
-    throw new TelepathydResponseError("invalid-json");
+    throw new TelepathosdResponseError("invalid-json");
   }
 }
 
-function telepathydHttpError(context: string, status: number): Error {
+function telepathosdHttpError(context: string, status: number): Error {
   if (status >= 400 && status < 500) {
     return new Error(`${context}: request rejected (${status})`);
   }
   return new Error(`${context}: unavailable`);
 }
 
-async function readSuccessfulTelepathydJson(
+async function readSuccessfulTelepathosdJson(
   response: Response,
   maxBytes: number,
   context: string,
 ): Promise<unknown> {
   let body: unknown;
   try {
-    body = await readTelepathydJson(response, maxBytes);
+    body = await readTelepathosdJson(response, maxBytes);
   } catch (error) {
     // Some existing daemon 4xx handlers intentionally use a plain-text body.
     // The status remains useful (notably permanent 413) but the body never
     // crosses this boundary or becomes spoken text.
-    if (!response.ok) throw telepathydHttpError(context, response.status);
+    if (!response.ok) throw telepathosdHttpError(context, response.status);
     throw error;
   }
-  if (!response.ok) throw telepathydHttpError(context, response.status);
+  if (!response.ok) throw telepathosdHttpError(context, response.status);
   return body;
 }
 
@@ -155,78 +155,78 @@ function isLoopbackHostname(hostname: string): boolean {
 }
 
 /** Token-bearing bridge traffic must not leave the host over cleartext HTTP. */
-export function telepathydTransportError(baseUrl: string): string | null {
-  if (!process.env.TELEPATHY_TOKEN) return null;
+export function telepathosdTransportError(baseUrl: string): string | null {
+  if (!process.env.TELEPATHOS_TOKEN) return null;
   let parsed: URL;
   try {
     parsed = new URL(baseUrl);
   } catch {
-    return "TELEPATHY_HERMES_URL is not a valid URL";
+    return "TELEPATHOS_HERMES_URL is not a valid URL";
   }
   if (parsed.protocol === "http:" && !isLoopbackHostname(parsed.hostname)) {
-    return "TELEPATHY_HERMES_URL must use https:// when TELEPATHY_TOKEN is set unless it is loopback";
+    return "TELEPATHOS_HERMES_URL must use https:// when TELEPATHOS_TOKEN is set unless it is loopback";
   }
   return null;
 }
 
 export function hermesConfig(): HermesConfig | null {
-  const raw = process.env.TELEPATHY_HERMES_URL;
+  const raw = process.env.TELEPATHOS_HERMES_URL;
   if (!raw || !raw.trim()) return null;
-  const baseUrl = normalizeTelepathydBaseUrl(raw);
-  const transportError = telepathydTransportError(baseUrl);
+  const baseUrl = normalizeTelepathosdBaseUrl(raw);
+  const transportError = telepathosdTransportError(baseUrl);
   if (transportError) throw new Error(transportError);
-  const token = process.env.TELEPATHY_TOKEN || undefined;
+  const token = process.env.TELEPATHOS_TOKEN || undefined;
   return {
     baseUrl,
-    timeoutMs: Number(process.env.TELEPATHY_HERMES_TIMEOUT ?? 120_000),
+    timeoutMs: Number(process.env.TELEPATHOS_HERMES_TIMEOUT ?? 120_000),
     targetIdentity: targetIdentityFor(baseUrl, token),
     token,
   };
 }
 
-function telepathydHeaders(cfg: HermesConfig): Record<string, string> {
+function telepathosdHeaders(cfg: HermesConfig): Record<string, string> {
   const headers: Record<string, string> = {};
-  if (cfg.token) headers["x-telepathy-token"] = cfg.token;
+  if (cfg.token) headers["x-telepathos-token"] = cfg.token;
   return headers;
 }
 
-export class TelepathydTargetChangedError extends Error {}
+export class TelepathosdTargetChangedError extends Error {}
 
 /** Fail closed if a captured operation no longer matches process config. */
-export function assertCurrentTelepathydTarget(expected: string): HermesConfig {
+export function assertCurrentTelepathosdTarget(expected: string): HermesConfig {
   const cfg = hermesConfig();
   if (!cfg || cfg.targetIdentity !== expected) {
-    throw new TelepathydTargetChangedError(
-      "telepathyd target identity changed; durable remote state remains pending until the original target is restored",
+    throw new TelepathosdTargetChangedError(
+      "telepathosd target identity changed; durable remote state remains pending until the original target is restored",
     );
   }
   return cfg;
 }
 
-/** telepathyd owns the lane registry used by both the phone and Hermes. */
-export async function fetchTelepathydState(
+/** telepathosd owns the lane registry used by both the phone and Hermes. */
+export async function fetchTelepathosdState(
   cfg: HermesConfig | null = hermesConfig(),
   signal?: AbortSignal,
-): Promise<TelepathydState | null> {
+): Promise<TelepathosdState | null> {
   if (!cfg) return null;
   const r = await fetch(`${cfg.baseUrl}/api/state`, {
-    headers: telepathydHeaders(cfg),
+    headers: telepathosdHeaders(cfg),
     signal: requestSignal(signal, 2_000),
   });
-  const state = await readSuccessfulTelepathydJson(
+  const state = await readSuccessfulTelepathosdJson(
     r,
-    TELEPATHYD_STATE_RESPONSE_MAX_BYTES,
-    "telepathyd state",
-  ) as TelepathydState;
+    TELEPATHOSD_STATE_RESPONSE_MAX_BYTES,
+    "telepathosd state",
+  ) as TelepathosdState;
   if (!Array.isArray(state.lanes) ||
       typeof state.active_id !== "string" ||
       typeof state.previous_id !== "string" ||
       !Number.isSafeInteger(state.revision) || state.revision < 0) {
-    throw new Error("telepathyd state: invalid lane registry");
+    throw new Error("telepathosd state: invalid lane registry");
   }
   if (!state.lanes.every((lane) => isValidLaneId(lane?.id)) ||
       !isValidLaneId(state.active_id) || !isValidLaneId(state.previous_id)) {
-    throw new Error("telepathyd state: invalid lane ID");
+    throw new Error("telepathosd state: invalid lane ID");
   }
   return state;
 }
@@ -246,7 +246,7 @@ interface DeliveryBatch {
 /** A complete remote batch was not admissible for this polling window. */
 class DeliveryBatchRejectedError extends Error {
   constructor() {
-    super("telepathyd delivery: response rejected");
+    super("telepathosd delivery: response rejected");
     this.name = "DeliveryBatchRejectedError";
   }
 }
@@ -285,7 +285,7 @@ export async function deliverAndWaitWithReceipt(
   signal?: AbortSignal,
 ): Promise<HermesReply> {
   signal?.throwIfAborted();
-  const remoteState = await fetchTelepathydState(cfg, signal);
+  const remoteState = await fetchTelepathosdState(cfg, signal);
   // A voice interaction is bound to the lane that was active when speech
   // ended. The remote registry is the fallback for callers without a bound
   // interaction, but must not retarget an in-flight utterance after a switch.
@@ -298,13 +298,13 @@ export async function deliverAndWaitWithReceipt(
   let cursor = await latestSeq(cfg, signal);
   const res = await fetch(`${cfg.baseUrl}/api/message`, {
     method: "POST",
-    headers: { ...telepathydHeaders(cfg), "Content-Type": "application/json" },
+    headers: { ...telepathosdHeaders(cfg), "Content-Type": "application/json" },
     body: JSON.stringify({ lane_id: lane.id, text }),
     signal: requestSignal(signal, cfg.timeoutMs),
   });
-  const responseBody = await readSuccessfulTelepathydJson(
+  const responseBody = await readSuccessfulTelepathosdJson(
     res,
-    TELEPATHYD_SMALL_RESPONSE_MAX_BYTES,
+    TELEPATHOSD_SMALL_RESPONSE_MAX_BYTES,
     "hermes rejected utterance",
   ) as { message_id?: unknown };
   if (!isValidOpaqueId(responseBody.message_id)) {
@@ -370,12 +370,12 @@ async function latestSeq(cfg: HermesConfig, signal?: AbortSignal): Promise<numbe
   // pending reply merely to learn the cursor and could make a valid backlog
   // permanently block new turns at the response byte limit.
   const r = await fetch(`${cfg.baseUrl}/api/delivery/head`, {
-    headers: telepathydHeaders(cfg),
+    headers: telepathosdHeaders(cfg),
     signal: requestSignal(signal, 2_000),
   });
   let j: unknown;
   try {
-    j = await readTelepathydJson(r, TELEPATHYD_SMALL_RESPONSE_MAX_BYTES);
+    j = await readTelepathosdJson(r, TELEPATHOSD_SMALL_RESPONSE_MAX_BYTES);
   } catch {
     throw new DeliveryBatchRejectedError();
   }
@@ -405,12 +405,12 @@ async function fetchDeliveries(
   });
   if (replyTo !== undefined) params.set("reply_to", replyTo);
   const r = await fetch(`${cfg.baseUrl}/api/delivery?${params}`, {
-    headers: telepathydHeaders(cfg),
+    headers: telepathosdHeaders(cfg),
     signal: requestSignal(signal, 2_000),
   });
   let body: { deliveries?: unknown; latest?: unknown };
   try {
-    body = await readTelepathydJson(r, TELEPATHYD_REPLY_RESPONSE_MAX_BYTES) as {
+    body = await readTelepathosdJson(r, TELEPATHOSD_REPLY_RESPONSE_MAX_BYTES) as {
       deliveries?: unknown;
       latest?: unknown;
     };
@@ -483,8 +483,8 @@ export async function respondViaHermes(
 }
 
 /** Remove a synchronous reply only after the handset has accepted playback. */
-export async function acknowledgeTelepathydDelivery(receipt: DeliveryReceipt): Promise<void> {
-  const cfg = assertCurrentTelepathydTarget(receipt.targetIdentity);
+export async function acknowledgeTelepathosdDelivery(receipt: DeliveryReceipt): Promise<void> {
+  const cfg = assertCurrentTelepathosdTarget(receipt.targetIdentity);
   const params = new URLSearchParams({
     after: String(receipt.afterSeq),
     through_seq: String(receipt.throughSeq),
@@ -493,18 +493,18 @@ export async function acknowledgeTelepathydDelivery(receipt: DeliveryReceipt): P
     reply_to: receipt.replyTo,
   });
   const r = await fetch(`${cfg.baseUrl}/api/delivery?${params}`, {
-    headers: telepathydHeaders(cfg),
+    headers: telepathosdHeaders(cfg),
     signal: AbortSignal.timeout(2_000),
   });
-  await readSuccessfulTelepathydJson(
+  await readSuccessfulTelepathosdJson(
     r,
-    TELEPATHYD_SMALL_RESPONSE_MAX_BYTES,
-    "telepathyd delivery ack",
+    TELEPATHOSD_SMALL_RESPONSE_MAX_BYTES,
+    "telepathosd delivery ack",
   );
 }
 
 /** Route meta-plane mutations through the same authoritative lane registry. */
-export async function respondViaTelepathydMeta(
+export async function respondViaTelepathosdMeta(
   text: string,
   signal?: AbortSignal,
 ): Promise<string | null> {
@@ -512,28 +512,28 @@ export async function respondViaTelepathydMeta(
   if (!cfg) return null;
   const r = await fetch(`${cfg.baseUrl}/api/meta`, {
     method: "POST",
-    headers: { ...telepathydHeaders(cfg), "Content-Type": "application/json" },
+    headers: { ...telepathosdHeaders(cfg), "Content-Type": "application/json" },
     body: JSON.stringify({ utterance: text }),
     signal: requestSignal(signal, 120_000),
   });
-  const body = await readSuccessfulTelepathydJson(
+  const body = await readSuccessfulTelepathosdJson(
     r,
-    TELEPATHYD_REPLY_RESPONSE_MAX_BYTES,
-    "telepathyd meta",
+    TELEPATHOSD_REPLY_RESPONSE_MAX_BYTES,
+    "telepathosd meta",
   ) as { reply?: unknown };
-  if (typeof body.reply !== "string") throw new Error("telepathyd meta: invalid reply");
+  if (typeof body.reply !== "string") throw new Error("telepathosd meta: invalid reply");
   if (!isReplyTextWithinLimit(body.reply)) {
     throw new ReplyTextLimitError("reply exceeds the 512 KiB UTF-8 byte limit");
   }
-  assertCurrentTelepathydTarget(cfg.targetIdentity);
+  assertCurrentTelepathosdTarget(cfg.targetIdentity);
   return body.reply;
 }
 
-/** telepathyd rejected a retry after its explicit bounded dedupe horizon. */
+/** telepathosd rejected a retry after its explicit bounded dedupe horizon. */
 export class InteractionRetryExpiredError extends Error {}
 
-/** Record a completed voice interaction in telepathyd's idempotent ledger. */
-export async function recordTelepathydInteraction(
+/** Record a completed voice interaction in telepathosd's idempotent ledger. */
+export async function recordTelepathosdInteraction(
   laneId: string,
   interactionId: string,
   interactionCreatedAtMs: number,
@@ -542,16 +542,16 @@ export async function recordTelepathydInteraction(
   const cfg = hermesConfig();
   if (!cfg) return;
   if (!isValidLaneId(laneId) || !isValidOpaqueId(interactionId)) {
-    throw new Error("telepathyd interaction: invalid correlation identity");
+    throw new Error("telepathosd interaction: invalid correlation identity");
   }
   if (expectedTargetIdentity !== undefined && cfg.targetIdentity !== expectedTargetIdentity) {
-    throw new TelepathydTargetChangedError(
-      "telepathyd target identity changed; interaction outbox remains pending until the original target is restored",
+    throw new TelepathosdTargetChangedError(
+      "telepathosd target identity changed; interaction outbox remains pending until the original target is restored",
     );
   }
   const r = await fetch(`${cfg.baseUrl}/api/lanes/interaction`, {
     method: "POST",
-    headers: { ...telepathydHeaders(cfg), "Content-Type": "application/json" },
+    headers: { ...telepathosdHeaders(cfg), "Content-Type": "application/json" },
     body: JSON.stringify({
       id: laneId,
       interaction_id: interactionId,
@@ -560,22 +560,22 @@ export async function recordTelepathydInteraction(
     signal: AbortSignal.timeout(2_000),
   });
   try {
-    await readTelepathydJson(r, TELEPATHYD_SMALL_RESPONSE_MAX_BYTES);
+    await readTelepathosdJson(r, TELEPATHOSD_SMALL_RESPONSE_MAX_BYTES);
   } catch (error) {
     if (r.status === 410) {
-      throw new InteractionRetryExpiredError("telepathyd interaction: retry expired");
+      throw new InteractionRetryExpiredError("telepathosd interaction: retry expired");
     }
-    if (!r.ok) throw telepathydHttpError("telepathyd interaction", r.status);
+    if (!r.ok) throw telepathosdHttpError("telepathosd interaction", r.status);
     throw error;
   }
   if (r.status === 410) {
-    throw new InteractionRetryExpiredError("telepathyd interaction: retry expired");
+    throw new InteractionRetryExpiredError("telepathosd interaction: retry expired");
   }
-  if (!r.ok) throw telepathydHttpError("telepathyd interaction", r.status);
+  if (!r.ok) throw telepathosdHttpError("telepathosd interaction", r.status);
 }
 
 // set by index.ts each turn — avoids threading the registry through every call
-let currentLaneIdFn: () => string = () => "telepathy:direct";
+let currentLaneIdFn: () => string = () => "telepathos:direct";
 export function setCurrentLaneIdFn(fn: () => string) { currentLaneIdFn = fn; }
 function currentLaneId(): string { return currentLaneIdFn(); }
 

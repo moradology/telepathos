@@ -23,7 +23,7 @@ pub const MAX_PROVIDER_RESPONSE_BYTES: usize =
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use telepathy_lanes::{match_lane, LaneRegistry};
+use telepathos_lanes::{match_lane, LaneRegistry};
 
 // ---- optional search backend (registered by the daemon) ----
 // The steering crate never touches SQLite itself; the daemon registers a
@@ -250,7 +250,7 @@ impl Provider for NullProvider {
     }
 }
 
-pub const META_SYSTEM: &str = "You are the steering agent for Telepathy, a voice interface to coding agents. \
+pub const META_SYSTEM: &str = "You are the steering agent for Telepathos, a voice interface to coding agents. \
 Your ONLY job is managing conversation lanes: listing, switching, creating, searching, reporting activity and statistics. \
 Rules: your output is spoken aloud through earbuds — be terse, no markdown, no code, no lists over five items. \
 Never discuss project content, never answer coding questions — if asked, tell the user to switch to the right \

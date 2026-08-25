@@ -13,17 +13,17 @@ import {
   touchLane,
 } from "./lanes.js";
 import {
-  readTelepathydJson,
-  TELEPATHYD_SMALL_RESPONSE_MAX_BYTES,
-  TELEPATHYD_STATE_RESPONSE_MAX_BYTES,
+  readTelepathosdJson,
+  TELEPATHOSD_SMALL_RESPONSE_MAX_BYTES,
+  TELEPATHOSD_STATE_RESPONSE_MAX_BYTES,
 } from "./hermes.js";
-import { normalizeTelepathydBaseUrl, targetIdentityFor } from "./target-scope.js";
+import { normalizeTelepathosdBaseUrl, targetIdentityFor } from "./target-scope.js";
 import { isValidLaneId } from "./protocol.js";
 
 /**
  * Agent-facing control API — the tools Hermes calls to inspect and modify
  * bridge state. Bound to localhost by default: the agent runs on the same
- * box (or reaches it over the tailnet with TELEPATHY_API_HOST set).
+ * box (or reaches it over the tailnet with TELEPATHOS_API_HOST set).
  *
  *   GET  /api/state                 full registry + active lane
  *   POST /api/lanes/active {"id"}  switch active lane
@@ -142,18 +142,18 @@ export async function readApiRequestBody(
   return decodeApiRequestBytes(chunks, maxBytes);
 }
 
-function telepathydProxyResponseLimit(url: string): number {
+function telepathosdProxyResponseLimit(url: string): number {
   return url === "/api/state" || url === "/api/lanes"
-    ? TELEPATHYD_STATE_RESPONSE_MAX_BYTES
-    : TELEPATHYD_SMALL_RESPONSE_MAX_BYTES;
+    ? TELEPATHOSD_STATE_RESPONSE_MAX_BYTES
+    : TELEPATHOSD_SMALL_RESPONSE_MAX_BYTES;
 }
 
 /** Preserve deterministic caller errors but never relay daemon error bodies. */
-function telepathydProxyFailureStatus(status: number): number {
+function telepathosdProxyFailureStatus(status: number): number {
   return status >= 400 && status < 500 ? status : 502;
 }
 
-const INVALID_SHARED_TOKEN = "\u0000telepathy-invalid-shared-token";
+const INVALID_SHARED_TOKEN = "\u0000telepathos-invalid-shared-token";
 
 function sharedTokenDigest(value: string): Buffer {
   return createHash("sha256").update(value, "utf8").digest();
@@ -182,9 +182,9 @@ export function sharedTokenMatches(configured: unknown, presented: unknown): boo
     typeof presented === "string" && equal;
 }
 
-/** Preserve the API's x-telepathy-token header, with Bearer as its fallback. */
+/** Preserve the API's x-telepathos-token header, with Bearer as its fallback. */
 export function sharedTokenFromHeaders(headers: http.IncomingHttpHeaders): unknown {
-  const sharedHeader = headers["x-telepathy-token"];
+  const sharedHeader = headers["x-telepathos-token"];
   if (sharedHeader !== undefined) {
     return typeof sharedHeader === "string" ? sharedHeader : undefined;
   }
@@ -208,14 +208,14 @@ export function laneMutationFailureStatus(error: unknown): 409 | 500 | 503 {
   return 500;
 }
 
-interface ApiTelepathydSnapshot {
+interface ApiTelepathosdSnapshot {
   readonly baseUrl: string | null;
   readonly token?: string;
   readonly targetIdentity: string;
   readonly transportError: string | null;
 }
 
-const API_TARGET_CHANGED_ERROR = "telepathyd target configuration changed; restart API server";
+const API_TARGET_CHANGED_ERROR = "telepathosd target configuration changed; restart API server";
 
 function isLoopbackHostname(hostname: string): boolean {
   return hostname === "localhost" || hostname === "127.0.0.1" ||
@@ -223,7 +223,7 @@ function isLoopbackHostname(hostname: string): boolean {
 }
 
 /** Validate transport using the token from this exact environment snapshot. */
-function telepathydTransportErrorForSnapshot(
+function telepathosdTransportErrorForSnapshot(
   baseUrl: string,
   token: string | undefined,
 ): string | null {
@@ -232,26 +232,26 @@ function telepathydTransportErrorForSnapshot(
   try {
     parsed = new URL(baseUrl);
   } catch {
-    return "TELEPATHY_HERMES_URL is not a valid URL";
+    return "TELEPATHOS_HERMES_URL is not a valid URL";
   }
   if (parsed.protocol === "http:" && !isLoopbackHostname(parsed.hostname)) {
-    return "TELEPATHY_HERMES_URL must use https:// when TELEPATHY_TOKEN is set unless it is loopback";
+    return "TELEPATHOS_HERMES_URL must use https:// when TELEPATHOS_TOKEN is set unless it is loopback";
   }
   return null;
 }
 
 /** Read URL, token, identity, and transport policy as one synchronous value. */
-function captureApiTelepathydSnapshot(): ApiTelepathydSnapshot {
-  const rawRemoteBase = process.env.TELEPATHY_HERMES_URL;
+function captureApiTelepathosdSnapshot(): ApiTelepathosdSnapshot {
+  const rawRemoteBase = process.env.TELEPATHOS_HERMES_URL;
   const baseUrl = rawRemoteBase && rawRemoteBase.trim()
-    ? normalizeTelepathydBaseUrl(rawRemoteBase)
+    ? normalizeTelepathosdBaseUrl(rawRemoteBase)
     : null;
-  const token = process.env.TELEPATHY_TOKEN || undefined;
+  const token = process.env.TELEPATHOS_TOKEN || undefined;
   return {
     baseUrl,
     token,
     targetIdentity: targetIdentityFor(baseUrl, token),
-    transportError: baseUrl ? telepathydTransportErrorForSnapshot(baseUrl, token) : null,
+    transportError: baseUrl ? telepathosdTransportErrorForSnapshot(baseUrl, token) : null,
   };
 }
 
@@ -261,7 +261,7 @@ export function startApiServer(
   host: string,
   tls?: TlsMaterial,
 ): http.Server | https.Server {
-  const startupTelepathyd = captureApiTelepathydSnapshot();
+  const startupTelepathosd = captureApiTelepathosdSnapshot();
   const remotePaths = new Set([
     "/api/state",
     "/api/lanes",
@@ -279,13 +279,13 @@ export function startApiServer(
       req.resume();
       return json(503, { error: API_TARGET_CHANGED_ERROR });
     };
-    let telepathyd = captureApiTelepathydSnapshot();
-    if (telepathyd.targetIdentity !== startupTelepathyd.targetIdentity) {
+    let telepathosd = captureApiTelepathosdSnapshot();
+    if (telepathosd.targetIdentity !== startupTelepathosd.targetIdentity) {
       return rejectTargetDrift();
     }
 
-    if (startupTelepathyd.token &&
-        !sharedTokenMatches(startupTelepathyd.token, sharedTokenFromHeaders(req.headers))) {
+    if (startupTelepathosd.token &&
+        !sharedTokenMatches(startupTelepathosd.token, sharedTokenFromHeaders(req.headers))) {
       return json(401, { error: "unauthorized" });
     }
 
@@ -303,19 +303,19 @@ export function startApiServer(
       // Body intake yields to the event loop. Re-read the complete config
       // immediately before any upstream fetch or local lane mutation so a
       // runtime env rotation cannot cross that side-effect boundary.
-      telepathyd = captureApiTelepathydSnapshot();
-      if (telepathyd.targetIdentity !== startupTelepathyd.targetIdentity) {
+      telepathosd = captureApiTelepathosdSnapshot();
+      if (telepathosd.targetIdentity !== startupTelepathosd.targetIdentity) {
         return rejectTargetDrift();
       }
       const url = req.url ?? "/";
-      if (telepathyd.baseUrl !== null && remotePaths.has(url)) {
-        if (telepathyd.transportError) {
-          return json(502, { error: telepathyd.transportError });
+      if (telepathosd.baseUrl !== null && remotePaths.has(url)) {
+        if (telepathosd.transportError) {
+          return json(502, { error: telepathosd.transportError });
         }
         try {
           const headers: Record<string, string> = { "Content-Type": "application/json" };
-          if (telepathyd.token) headers["x-telepathy-token"] = telepathyd.token;
-          const upstream = await fetch(`${telepathyd.baseUrl}${url}`, {
+          if (telepathosd.token) headers["x-telepathos-token"] = telepathosd.token;
+          const upstream = await fetch(`${telepathosd.baseUrl}${url}`, {
             method: req.method,
             headers,
             ...(req.method === "GET" || req.method === "HEAD" ? {} : { body }),
@@ -323,25 +323,25 @@ export function startApiServer(
           });
           let upstreamBody: unknown;
           try {
-            upstreamBody = await readTelepathydJson(upstream, telepathydProxyResponseLimit(url));
+            upstreamBody = await readTelepathosdJson(upstream, telepathosdProxyResponseLimit(url));
           } catch (error) {
             // Daemon 4xx bodies can be legacy plain text. Preserve the
             // actionable status but never pass that body through the proxy.
             if (!upstream.ok) {
-              return json(telepathydProxyFailureStatus(upstream.status), {
-                error: `telepathyd rejected request (${upstream.status})`,
+              return json(telepathosdProxyFailureStatus(upstream.status), {
+                error: `telepathosd rejected request (${upstream.status})`,
               });
             }
             throw error;
           }
           if (!upstream.ok) {
-            return json(telepathydProxyFailureStatus(upstream.status), {
-              error: `telepathyd rejected request (${upstream.status})`,
+            return json(telepathosdProxyFailureStatus(upstream.status), {
+              error: `telepathosd rejected request (${upstream.status})`,
             });
           }
           return json(upstream.status, upstreamBody);
         } catch {
-          return json(502, { error: "telepathyd unavailable" });
+          return json(502, { error: "telepathosd unavailable" });
         }
       }
         if (req.method === "GET" && url === "/api/state") {

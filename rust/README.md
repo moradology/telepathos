@@ -1,4 +1,4 @@
-# telepathy-rs
+# telepathos-rs
 
 Rust home of the steering plane: the meta agent, lane registry, and the
 go-between service for Hermes.
@@ -11,7 +11,7 @@ assembly at the edges, providers injected into the loop rather than hardwired:
 | `proto` | wire frame types + defensive parsing | `packages/protocol` |
 | `lanes` | lane registry, persistence, meta grammar | session model |
 | `steering` | agent loop, typed tools, injectable `Provider` | `packages/agent` |
-| `telepathyd` | binary: lane HTTP API, future relay connector | product assembly |
+| `telepathosd` | binary: lane HTTP API, future relay connector | product assembly |
 
 ## Invariants (hold the line)
 
@@ -26,5 +26,5 @@ assembly at the edges, providers injected into the loop rather than hardwired:
 ```sh
 cargo build          # debug
 cargo test           # unit + integration tests, no network needed
-cargo run -p telepathyd
+cargo run -p telepathosd
 ```

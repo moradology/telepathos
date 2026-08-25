@@ -8,7 +8,7 @@ Each item lists WHY it exists so future-us doesn't have to reverse-engineer inte
 ### [M1] Setup doctor flow — IMPLEMENTED (assistant check + live link status + Shokz checklist in-app)
 **Why:** Known failure modes produce identical symptoms ("nothing happens"):
 1. Smart Wear Detection blocks controls unless bud is seated (Shokz support confirms)
-2. Telepathy not set as default digital assistant
+2. Telepathos not set as default digital assistant
 3. Shokz app gesture not mapped to voice assistant
 4. Server unreachable (wrong URL / Mac asleep / LAN changed)
 **Done when:** App shows live status for each check; user can tap-to-fix where possible
@@ -43,12 +43,12 @@ never silently.
 **Done when:** Notification reflects real state; failure produces spoken feedback without
 the server.
 
-### [M5] Transcription echo-back — IMPLEMENTED server-side (TELEPATHY_ECHO=on default; verified in test flow: two text agent_end events per interaction)
+### [M5] Transcription echo-back — IMPLEMENTED server-side (TELEPATHOS_ECHO=on default; verified in test flow: two text agent_end events per interaction)
 **Why:** Input quality (bone-conduction mic + beamforming) should make STT errors rare but
 catastrophic when they happen (silent wrong-agent-action). Echo what was heard before acting.
 **Behavior:** After STT, server sends a text "Working on: …" confirmation; Android's LocalAnnouncer speaks it locally, then proceeds.
 Double-tap-stop (M3) is the safety net.
-**Config:** `TELEPATHY_ECHO=on|off` (default on for now).
+**Config:** `TELEPATHOS_ECHO=on|off` (default on for now).
 **Done when:** Echo sentence is heard before agent reply in normal flow.
 
 ## Should-support

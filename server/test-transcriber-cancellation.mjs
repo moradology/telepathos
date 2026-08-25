@@ -45,7 +45,7 @@ async function expectProviderFailure(request, rawDetail) {
 }
 
 async function testOpenAiCancellation() {
-  process.env.TELEPATHY_STT = "openai";
+  process.env.TELEPATHOS_STT = "openai";
   const { transcribe } = await import("./dist/transcriber.js");
   const controller = new AbortController();
   let receivedSignal;
@@ -64,9 +64,9 @@ async function testOpenAiCancellation() {
 }
 
 async function testLocalCancellation(markerPath) {
-  process.env.TELEPATHY_STT = "local";
-  process.env.TELEPATHY_FAKE_WORKER_DELAY = "1000";
-  process.env.TELEPATHY_FAKE_WORKER_MARKER = markerPath;
+  process.env.TELEPATHOS_STT = "local";
+  process.env.TELEPATHOS_FAKE_WORKER_DELAY = "1000";
+  process.env.TELEPATHOS_FAKE_WORKER_MARKER = markerPath;
   const { transcribe } = await import("./dist/transcriber.js");
   const controller = new AbortController();
   const request = transcribe(Buffer.from("audio"), controller.signal);
@@ -76,7 +76,7 @@ async function testLocalCancellation(markerPath) {
 
   // A canceled request must stop the worker, not leave it busy until its
   // original inference completes and delay the next request.
-  process.env.TELEPATHY_FAKE_WORKER_DELAY = "10";
+  process.env.TELEPATHOS_FAKE_WORKER_DELAY = "10";
   const started = Date.now();
   const next = await transcribe(Buffer.from("audio"));
   assert.equal(next.text, "after-cancel");
@@ -84,10 +84,10 @@ async function testLocalCancellation(markerPath) {
 }
 
 async function testLocalConcurrentCancellation(markerPath) {
-  process.env.TELEPATHY_STT = "local";
-  process.env.TELEPATHY_FAKE_WORKER_DELAY = "25";
-  process.env.TELEPATHY_FAKE_WORKER_MARKER = markerPath;
-  process.env.TELEPATHY_FAKE_WORKER_EXPECTED_REQUESTS = "2";
+  process.env.TELEPATHOS_STT = "local";
+  process.env.TELEPATHOS_FAKE_WORKER_DELAY = "25";
+  process.env.TELEPATHOS_FAKE_WORKER_MARKER = markerPath;
+  process.env.TELEPATHOS_FAKE_WORKER_EXPECTED_REQUESTS = "2";
   const { transcribe } = await import("./dist/transcriber.js");
   const controller = new AbortController();
   const canceled = transcribe(Buffer.from("first"), controller.signal);
@@ -101,10 +101,10 @@ async function testLocalConcurrentCancellation(markerPath) {
 }
 
 async function testLocalVocabPrompt(markerPath, vocabPath) {
-  process.env.TELEPATHY_STT = "local";
-  process.env.TELEPATHY_VOCAB_FILE = vocabPath;
-  process.env.TELEPATHY_FAKE_WORKER_DELAY = "10";
-  process.env.TELEPATHY_FAKE_WORKER_MARKER = markerPath;
+  process.env.TELEPATHOS_STT = "local";
+  process.env.TELEPATHOS_VOCAB_FILE = vocabPath;
+  process.env.TELEPATHOS_FAKE_WORKER_DELAY = "10";
+  process.env.TELEPATHOS_FAKE_WORKER_MARKER = markerPath;
   const { transcribe } = await import("./dist/transcriber.js");
   const result = await transcribe(Buffer.from("audio"));
   assert.deepEqual(result, { text: "after-cancel", confidence: 0.9 });
@@ -112,14 +112,14 @@ async function testLocalVocabPrompt(markerPath, vocabPath) {
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line));
-  assert.equal(requests[0].prompt, "Telepathy, LaneRegistry");
+  assert.equal(requests[0].prompt, "Telepathos, LaneRegistry");
 }
 
 async function testLocalWorkerProtocol(markerPath) {
-  process.env.TELEPATHY_STT = "local";
-  process.env.TELEPATHY_FAKE_WORKER_MODE = "overflow";
-  process.env.TELEPATHY_FAKE_WORKER_MARKER = markerPath;
-  process.env.TELEPATHY_FAKE_WORKER_EXPECTED_REQUESTS = "2";
+  process.env.TELEPATHOS_STT = "local";
+  process.env.TELEPATHOS_FAKE_WORKER_MODE = "overflow";
+  process.env.TELEPATHOS_FAKE_WORKER_MARKER = markerPath;
+  process.env.TELEPATHOS_FAKE_WORKER_EXPECTED_REQUESTS = "2";
   const { transcribe } = await import("./dist/transcriber.js");
 
   // A broken shared worker must fail every request it owns, not only the
@@ -131,22 +131,22 @@ async function testLocalWorkerProtocol(markerPath) {
 
   // Overflow kills the process. A subsequent request must receive a new
   // worker rather than inheriting its incomplete byte buffer.
-  process.env.TELEPATHY_FAKE_WORKER_MODE = "normal";
-  delete process.env.TELEPATHY_FAKE_WORKER_EXPECTED_REQUESTS;
+  process.env.TELEPATHOS_FAKE_WORKER_MODE = "normal";
+  delete process.env.TELEPATHOS_FAKE_WORKER_EXPECTED_REQUESTS;
   const recovered = await transcribe(Buffer.from("recovered"));
   assert.deepEqual(recovered, { text: "after-cancel", confidence: 0.9 });
 }
 
 async function testLocalWorkerInvalidOutput(mode, rawDetail) {
-  process.env.TELEPATHY_STT = "local";
-  process.env.TELEPATHY_FAKE_WORKER_MODE = mode;
+  process.env.TELEPATHOS_STT = "local";
+  process.env.TELEPATHOS_FAKE_WORKER_MODE = mode;
   const { transcribe } = await import("./dist/transcriber.js");
   await expectProviderFailure(transcribe(Buffer.from("audio")), rawDetail);
 }
 
 async function testLocalWorkerSplitUtf8() {
-  process.env.TELEPATHY_STT = "local";
-  process.env.TELEPATHY_FAKE_WORKER_MODE = "split-utf8";
+  process.env.TELEPATHOS_STT = "local";
+  process.env.TELEPATHOS_FAKE_WORKER_MODE = "split-utf8";
   const { transcribe } = await import("./dist/transcriber.js");
   assert.deepEqual(await transcribe(Buffer.from("audio")), {
     text: "café 🎙",
@@ -155,8 +155,8 @@ async function testLocalWorkerSplitUtf8() {
 }
 
 async function testLocalWorkerEscapedExactBound() {
-  process.env.TELEPATHY_STT = "local";
-  process.env.TELEPATHY_FAKE_WORKER_MODE = "escaped-exact-bound";
+  process.env.TELEPATHOS_STT = "local";
+  process.env.TELEPATHOS_FAKE_WORKER_MODE = "escaped-exact-bound";
   const { MAX_REPLY_TEXT_BYTES } = await import("./dist/reply-text.js");
   const { transcribe } = await import("./dist/transcriber.js");
   const transcript = await transcribe(Buffer.from("audio"));
@@ -166,7 +166,7 @@ async function testLocalWorkerEscapedExactBound() {
 
 async function runCase(name, env) {
   const child = spawn(process.execPath, [fileURLToPath(import.meta.url)], {
-    env: { ...process.env, ...env, TELEPATHY_TRANSCRIBER_CASE: name },
+    env: { ...process.env, ...env, TELEPATHOS_TRANSCRIBER_CASE: name },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";
@@ -181,24 +181,24 @@ async function runCase(name, env) {
   });
 }
 
-const caseName = process.env.TELEPATHY_TRANSCRIBER_CASE;
+const caseName = process.env.TELEPATHOS_TRANSCRIBER_CASE;
 if (caseName === "openai") {
   await testOpenAiCancellation();
   console.log("OPENAI TRANSCRIBER CANCELLATION PASS");
 } else if (caseName === "local") {
-  await testLocalCancellation(process.env.TELEPATHY_FAKE_WORKER_MARKER);
+  await testLocalCancellation(process.env.TELEPATHOS_FAKE_WORKER_MARKER);
   console.log("LOCAL TRANSCRIBER CANCELLATION PASS");
 } else if (caseName === "local-concurrent") {
-  await testLocalConcurrentCancellation(process.env.TELEPATHY_FAKE_WORKER_MARKER);
+  await testLocalConcurrentCancellation(process.env.TELEPATHOS_FAKE_WORKER_MARKER);
   console.log("LOCAL CONCURRENT TRANSCRIBER CANCELLATION PASS");
 } else if (caseName === "local-vocab") {
   await testLocalVocabPrompt(
-    process.env.TELEPATHY_FAKE_WORKER_MARKER,
-    process.env.TELEPATHY_VOCAB_FILE,
+    process.env.TELEPATHOS_FAKE_WORKER_MARKER,
+    process.env.TELEPATHOS_VOCAB_FILE,
   );
   console.log("LOCAL VOCAB PROMPT PASS");
 } else if (caseName === "local-worker-protocol") {
-  await testLocalWorkerProtocol(process.env.TELEPATHY_FAKE_WORKER_MARKER);
+  await testLocalWorkerProtocol(process.env.TELEPATHOS_FAKE_WORKER_MARKER);
   console.log("LOCAL WORKER OVERFLOW AND RECOVERY PASS");
 } else if (caseName === "local-worker-oversized") {
   await testLocalWorkerInvalidOutput("oversized");
@@ -228,12 +228,12 @@ if (caseName === "openai") {
   await testLocalWorkerEscapedExactBound();
   console.log("LOCAL WORKER ESCAPED EXACT BOUND PASS");
 } else {
-  const temp = await mkdtemp(join(tmpdir(), "telepathy-transcriber-test-"));
+  const temp = await mkdtemp(join(tmpdir(), "telepathos-transcriber-test-"));
   const fakePython = join(temp, "python3");
   const marker = join(temp, "request-received");
   const concurrentMarker = join(temp, "concurrent-requests-received");
   const vocabPath = join(temp, "vocab.txt");
-  await writeFile(vocabPath, "Telepathy\n\nLaneRegistry\n");
+  await writeFile(vocabPath, "Telepathos\n\nLaneRegistry\n");
   await writeFile(fakePython, `#!/usr/bin/env node
 import fs from "node:fs";
 
@@ -250,10 +250,10 @@ process.stdin.on("data", (chunk) => {
     if (!line.trim()) continue;
     const request = JSON.parse(line);
     requests.push(request);
-    fs.appendFileSync(process.env.TELEPATHY_FAKE_WORKER_MARKER, JSON.stringify(request) + "\\n");
-    const expectedRequests = Number(process.env.TELEPATHY_FAKE_WORKER_EXPECTED_REQUESTS ?? "1");
+    fs.appendFileSync(process.env.TELEPATHOS_FAKE_WORKER_MARKER, JSON.stringify(request) + "\\n");
+    const expectedRequests = Number(process.env.TELEPATHOS_FAKE_WORKER_EXPECTED_REQUESTS ?? "1");
     if (requests.length < expectedRequests) continue;
-    const mode = process.env.TELEPATHY_FAKE_WORKER_MODE ?? "normal";
+    const mode = process.env.TELEPATHOS_FAKE_WORKER_MODE ?? "normal";
     if (mode === "overflow") {
       // Greater than the sixfold escaped-transcript allowance.
       process.stdout.write(Buffer.alloc(4 * 1024 * 1024, 0x61));
@@ -305,7 +305,7 @@ process.stdin.on("data", (chunk) => {
       process.stdout.write(JSON.stringify({ id: request.id, text: "\\0".repeat(512 * 1024) }) + "\\n", () => process.exit(0));
       continue;
     }
-    const delay = Number(process.env.TELEPATHY_FAKE_WORKER_DELAY ?? "1000");
+    const delay = Number(process.env.TELEPATHOS_FAKE_WORKER_DELAY ?? "1000");
     setTimeout(() => {
       for (const pending of requests) {
         process.stdout.write(JSON.stringify({ id: pending.id, text: "after-cancel", confidence: 0.9 }) + "\\n");
@@ -316,72 +316,72 @@ process.stdin.on("data", (chunk) => {
 });
 `, { mode: 0o755 });
   try {
-    await runCase("openai", { TELEPATHY_STT: "openai" });
+    await runCase("openai", { TELEPATHOS_STT: "openai" });
     await runCase("local", {
       PATH: `${temp}:${process.env.PATH ?? ""}`,
-      TELEPATHY_STT: "local",
-      TELEPATHY_FAKE_WORKER_MARKER: marker,
+      TELEPATHOS_STT: "local",
+      TELEPATHOS_FAKE_WORKER_MARKER: marker,
     });
     await runCase("local-concurrent", {
       PATH: `${temp}:${process.env.PATH ?? ""}`,
-      TELEPATHY_STT: "local",
-      TELEPATHY_FAKE_WORKER_MARKER: concurrentMarker,
+      TELEPATHOS_STT: "local",
+      TELEPATHOS_FAKE_WORKER_MARKER: concurrentMarker,
     });
     await runCase("local-vocab", {
       PATH: `${temp}:${process.env.PATH ?? ""}`,
-      TELEPATHY_STT: "local",
-      TELEPATHY_FAKE_WORKER_MARKER: join(temp, "vocab-requests"),
-      TELEPATHY_VOCAB_FILE: vocabPath,
+      TELEPATHOS_STT: "local",
+      TELEPATHOS_FAKE_WORKER_MARKER: join(temp, "vocab-requests"),
+      TELEPATHOS_VOCAB_FILE: vocabPath,
     });
     await runCase("local-worker-protocol", {
       PATH: `${temp}:${process.env.PATH ?? ""}`,
-      TELEPATHY_STT: "local",
-      TELEPATHY_FAKE_WORKER_MARKER: join(temp, "protocol-requests"),
+      TELEPATHOS_STT: "local",
+      TELEPATHOS_FAKE_WORKER_MARKER: join(temp, "protocol-requests"),
     });
     await runCase("local-worker-oversized", {
       PATH: `${temp}:${process.env.PATH ?? ""}`,
-      TELEPATHY_STT: "local",
-      TELEPATHY_FAKE_WORKER_MARKER: join(temp, "oversized-requests"),
+      TELEPATHOS_STT: "local",
+      TELEPATHOS_FAKE_WORKER_MARKER: join(temp, "oversized-requests"),
     });
     await runCase("local-worker-invalid-utf8", {
       PATH: `${temp}:${process.env.PATH ?? ""}`,
-      TELEPATHY_STT: "local",
-      TELEPATHY_FAKE_WORKER_MARKER: join(temp, "invalid-utf8-requests"),
+      TELEPATHOS_STT: "local",
+      TELEPATHOS_FAKE_WORKER_MARKER: join(temp, "invalid-utf8-requests"),
     });
     await runCase("local-worker-invalid-json", {
       PATH: `${temp}:${process.env.PATH ?? ""}`,
-      TELEPATHY_STT: "local",
-      TELEPATHY_FAKE_WORKER_MARKER: join(temp, "invalid-json-requests"),
+      TELEPATHOS_STT: "local",
+      TELEPATHOS_FAKE_WORKER_MARKER: join(temp, "invalid-json-requests"),
     });
     await runCase("local-worker-invalid-schema", {
       PATH: `${temp}:${process.env.PATH ?? ""}`,
-      TELEPATHY_STT: "local",
-      TELEPATHY_FAKE_WORKER_MARKER: join(temp, "invalid-schema-requests"),
+      TELEPATHOS_STT: "local",
+      TELEPATHOS_FAKE_WORKER_MARKER: join(temp, "invalid-schema-requests"),
     });
     await runCase("local-worker-invalid-confidence", {
       PATH: `${temp}:${process.env.PATH ?? ""}`,
-      TELEPATHY_STT: "local",
-      TELEPATHY_FAKE_WORKER_MARKER: join(temp, "invalid-confidence-requests"),
+      TELEPATHOS_STT: "local",
+      TELEPATHOS_FAKE_WORKER_MARKER: join(temp, "invalid-confidence-requests"),
     });
     await runCase("local-worker-wrong-id", {
       PATH: `${temp}:${process.env.PATH ?? ""}`,
-      TELEPATHY_STT: "local",
-      TELEPATHY_FAKE_WORKER_MARKER: join(temp, "wrong-id-requests"),
+      TELEPATHOS_STT: "local",
+      TELEPATHOS_FAKE_WORKER_MARKER: join(temp, "wrong-id-requests"),
     });
     await runCase("local-worker-raw-error", {
       PATH: `${temp}:${process.env.PATH ?? ""}`,
-      TELEPATHY_STT: "local",
-      TELEPATHY_FAKE_WORKER_MARKER: join(temp, "raw-error-requests"),
+      TELEPATHOS_STT: "local",
+      TELEPATHOS_FAKE_WORKER_MARKER: join(temp, "raw-error-requests"),
     });
     await runCase("local-worker-split-utf8", {
       PATH: `${temp}:${process.env.PATH ?? ""}`,
-      TELEPATHY_STT: "local",
-      TELEPATHY_FAKE_WORKER_MARKER: join(temp, "split-utf8-requests"),
+      TELEPATHOS_STT: "local",
+      TELEPATHOS_FAKE_WORKER_MARKER: join(temp, "split-utf8-requests"),
     });
     await runCase("local-worker-escaped-exact-bound", {
       PATH: `${temp}:${process.env.PATH ?? ""}`,
-      TELEPATHY_STT: "local",
-      TELEPATHY_FAKE_WORKER_MARKER: join(temp, "escaped-exact-bound-requests"),
+      TELEPATHOS_STT: "local",
+      TELEPATHOS_FAKE_WORKER_MARKER: join(temp, "escaped-exact-bound-requests"),
     });
     console.log("TRANSCRIBER CANCELLATION TESTS PASS");
   } finally {

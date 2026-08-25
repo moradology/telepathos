@@ -1,4 +1,4 @@
-//! Telepathy wire frames. Must stay in lockstep with
+//! Telepathos wire frames. Must stay in lockstep with
 //! `server/src/protocol.ts` and `android/.../Protocol.kt` — the three
 //! compilers are the contract's test suite.
 
@@ -596,10 +596,10 @@ mod tests {
         for value in [
             "",
             " ",
-            "telepathy:repo:quote\"",
-            "telepathy:repo:backslash\\",
-            "telepathy:repo:control\n",
-            "telepathy:repo:é",
+            "telepathos:repo:quote\"",
+            "telepathos:repo:backslash\\",
+            "telepathos:repo:control\n",
+            "telepathos:repo:é",
         ] {
             assert!(
                 !is_valid_lane_id(value),
@@ -607,11 +607,11 @@ mod tests {
             );
         }
         assert!(!is_valid_lane_id(&format!(
-            "telepathy:repo:{}",
+            "telepathos:repo:{}",
             "a".repeat(MAX_LANE_ID_LENGTH)
         )));
-        assert!(is_valid_lane_id("telepathy:direct"));
-        assert!(is_valid_lane_id("telepathy:repo:geospatial-migration"));
+        assert!(is_valid_lane_id("telepathos:direct"));
+        assert!(is_valid_lane_id("telepathos:repo:geospatial-migration"));
     }
 
     #[test]
@@ -654,7 +654,7 @@ mod tests {
                 text: "reply".into(),
                 turn_token: "turn-1".into(),
                 interaction_id: "interaction-1".into(),
-                lane_id: (mask & 0b0001 != 0).then(|| "telepathy:direct".into()),
+                lane_id: (mask & 0b0001 != 0).then(|| "telepathos:direct".into()),
                 reply_to: (mask & 0b0010 != 0).then(|| "reply-1".into()),
                 after_seq: (mask & 0b0100 != 0).then_some(4),
                 through_seq: (mask & 0b1000 != 0).then_some(6),
@@ -684,26 +684,26 @@ mod tests {
                 through_seq: Some(through_seq),
             };
 
-        let valid = make_message("telepathy:direct", "reply-1", 4, 6);
+        let valid = make_message("telepathos:direct", "reply-1", 4, 6);
         assert_eq!(
             serde_json::to_string(&valid).unwrap(),
-            r#"{"type":"agent_end","text":"reply","turn_token":"turn-1","interaction_id":"interaction-1","lane_id":"telepathy:direct","reply_to":"reply-1","after_seq":4,"through_seq":6}"#
+            r#"{"type":"agent_end","text":"reply","turn_token":"turn-1","interaction_id":"interaction-1","lane_id":"telepathos:direct","reply_to":"reply-1","after_seq":4,"through_seq":6}"#
         );
         assert!(serialize_server_msg(&valid).is_some());
 
         for (name, message) in [
             (
                 "invalid lane",
-                make_message("telepathy: direct", "reply-1", 4, 6),
+                make_message("telepathos: direct", "reply-1", 4, 6),
             ),
             (
                 "blank reply ID",
-                make_message("telepathy:direct", " ", 4, 6),
+                make_message("telepathos:direct", " ", 4, 6),
             ),
             (
                 "unsafe after sequence",
                 make_message(
-                    "telepathy:direct",
+                    "telepathos:direct",
                     "reply-1",
                     MAX_SAFE_SEQUENCE + 1,
                     MAX_SAFE_SEQUENCE + 2,
@@ -712,7 +712,7 @@ mod tests {
             (
                 "unsafe through sequence",
                 make_message(
-                    "telepathy:direct",
+                    "telepathos:direct",
                     "reply-1",
                     MAX_SAFE_SEQUENCE - 1,
                     MAX_SAFE_SEQUENCE + 1,
@@ -720,11 +720,11 @@ mod tests {
             ),
             (
                 "reversed interval",
-                make_message("telepathy:direct", "reply-1", 6, 4),
+                make_message("telepathos:direct", "reply-1", 6, 4),
             ),
             (
                 "equal interval",
-                make_message("telepathy:direct", "reply-1", 4, 4),
+                make_message("telepathos:direct", "reply-1", 4, 4),
             ),
         ] {
             assert!(
@@ -770,19 +770,19 @@ mod tests {
             })
         );
         assert_eq!(
-            ControlMsg::parse(r#"{"type":"lane","id":"telepathy:direct","turn_token":"turn-1"}"#),
+            ControlMsg::parse(r#"{"type":"lane","id":"telepathos:direct","turn_token":"turn-1"}"#),
             Some(ControlMsg::Lane {
-                id: "telepathy:direct".into(),
+                id: "telepathos:direct".into(),
                 revision: None,
                 turn_token: "turn-1".into(),
             })
         );
         assert_eq!(
             ControlMsg::parse(
-                r#"{"type":"reply_received","lane_id":"telepathy:direct","reply_to":"tp-1","after_seq":4,"through_seq":6,"turn_token":"turn-1","interaction_id":"i-1"}"#
+                r#"{"type":"reply_received","lane_id":"telepathos:direct","reply_to":"tp-1","after_seq":4,"through_seq":6,"turn_token":"turn-1","interaction_id":"i-1"}"#
             ),
             Some(ControlMsg::ReplyReceived {
-                lane_id: "telepathy:direct".into(),
+                lane_id: "telepathos:direct".into(),
                 reply_to: "tp-1".into(),
                 after_seq: 4,
                 through_seq: 6,
@@ -792,10 +792,10 @@ mod tests {
         );
         assert_eq!(
             ControlMsg::parse(
-                r#"{"type":"reply_ack","lane_id":"telepathy:direct","reply_to":"tp-1","after_seq":4,"through_seq":6,"turn_token":"turn-1","interaction_id":"i-1"}"#
+                r#"{"type":"reply_ack","lane_id":"telepathos:direct","reply_to":"tp-1","after_seq":4,"through_seq":6,"turn_token":"turn-1","interaction_id":"i-1"}"#
             ),
             Some(ControlMsg::ReplyAck {
-                lane_id: "telepathy:direct".into(),
+                lane_id: "telepathos:direct".into(),
                 reply_to: "tp-1".into(),
                 after_seq: 4,
                 through_seq: 6,
@@ -805,10 +805,10 @@ mod tests {
         );
         assert_eq!(
             ControlMsg::parse(
-                r#"{"type":"reply_ack_retire","lane_id":"telepathy:direct","reply_to":"tp-1","after_seq":4,"through_seq":6,"turn_token":"turn-1","interaction_id":"i-1"}"#
+                r#"{"type":"reply_ack_retire","lane_id":"telepathos:direct","reply_to":"tp-1","after_seq":4,"through_seq":6,"turn_token":"turn-1","interaction_id":"i-1"}"#
             ),
             Some(ControlMsg::ReplyAckRetire {
-                lane_id: "telepathy:direct".into(),
+                lane_id: "telepathos:direct".into(),
                 reply_to: "tp-1".into(),
                 after_seq: 4,
                 through_seq: 6,
@@ -828,21 +828,21 @@ mod tests {
             r#"{"type":"command","command":"stop"}"#,
             r#"{"type":"utterance_end"}"#,
             r#"{"type":"meta_mode","turn_token":""}"#,
-            r#"{"type":"lane","id":"telepathy:direct"}"#,
+            r#"{"type":"lane","id":"telepathos:direct"}"#,
             "{\"type\":\"unknown_weird\"}",
             "[]",
             "null",
             r#"{"type":"reply_received","lane_id":"","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}"#,
-            r#"{"type":"reply_received","lane_id":"telepathy:direct","reply_to":"tp-1","after_seq":1,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}"#,
-            r#"{"type":"reply_received","lane_id":"telepathy:direct","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"","interaction_id":"i-1"}"#,
+            r#"{"type":"reply_received","lane_id":"telepathos:direct","reply_to":"tp-1","after_seq":1,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}"#,
+            r#"{"type":"reply_received","lane_id":"telepathos:direct","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"","interaction_id":"i-1"}"#,
             r#"{"type":"reply_ack","lane_id":"","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}"#,
-            r#"{"type":"reply_ack","lane_id":"telepathy:direct","reply_to":"","after_seq":0,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}"#,
-            r#"{"type":"reply_ack","lane_id":"telepathy:direct","reply_to":"tp-1","after_seq":6,"through_seq":6,"turn_token":"turn-1","interaction_id":"i-1"}"#,
-            r#"{"type":"reply_ack","lane_id":"telepathy:direct","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"","interaction_id":"i-1"}"#,
+            r#"{"type":"reply_ack","lane_id":"telepathos:direct","reply_to":"","after_seq":0,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}"#,
+            r#"{"type":"reply_ack","lane_id":"telepathos:direct","reply_to":"tp-1","after_seq":6,"through_seq":6,"turn_token":"turn-1","interaction_id":"i-1"}"#,
+            r#"{"type":"reply_ack","lane_id":"telepathos:direct","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"","interaction_id":"i-1"}"#,
             r#"{"type":"reply_ack_retire","lane_id":"","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}"#,
-            r#"{"type":"reply_ack_retire","lane_id":"telepathy:direct","reply_to":"","after_seq":0,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}"#,
-            r#"{"type":"reply_ack_retire","lane_id":"telepathy:direct","reply_to":"tp-1","after_seq":6,"through_seq":6,"turn_token":"turn-1","interaction_id":"i-1"}"#,
-            r#"{"type":"reply_ack_retire","lane_id":"telepathy:direct","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"","interaction_id":"i-1"}"#,
+            r#"{"type":"reply_ack_retire","lane_id":"telepathos:direct","reply_to":"","after_seq":0,"through_seq":1,"turn_token":"turn-1","interaction_id":"i-1"}"#,
+            r#"{"type":"reply_ack_retire","lane_id":"telepathos:direct","reply_to":"tp-1","after_seq":6,"through_seq":6,"turn_token":"turn-1","interaction_id":"i-1"}"#,
+            r#"{"type":"reply_ack_retire","lane_id":"telepathos:direct","reply_to":"tp-1","after_seq":0,"through_seq":1,"turn_token":"","interaction_id":"i-1"}"#,
         ] {
             assert_eq!(ControlMsg::parse(s), None, "should reject: {s}");
         }
@@ -869,7 +869,7 @@ mod tests {
             }),
             serde_json::json!({
                 "type": "lane",
-                "id": "telepathy:direct",
+                "id": "telepathos:direct",
                 "turn_token": max_token,
             }),
         ] {
@@ -885,7 +885,7 @@ mod tests {
         for frame_type in ["reply_received", "reply_ack", "reply_ack_retire"] {
             let at_limit = serde_json::json!({
                 "type": frame_type,
-                "lane_id": "telepathy:direct",
+                "lane_id": "telepathos:direct",
                 "reply_to": "tp-1",
                 "after_seq": MAX_SAFE_SEQUENCE - 1,
                 "through_seq": MAX_SAFE_SEQUENCE,
@@ -1039,7 +1039,7 @@ mod tests {
     fn lane_revision_matches_the_json_safe_integer_boundary() {
         let at_limit = serde_json::json!({
             "type": "lane",
-            "id": "telepathy:direct",
+            "id": "telepathos:direct",
             "revision": MAX_SAFE_SEQUENCE,
             "turn_token": "turn-1",
         });
@@ -1167,7 +1167,7 @@ mod tests {
         let controls = [
             (
                 ControlMsg::ReplyReceived {
-                    lane_id: "telepathy:direct".into(),
+                    lane_id: "telepathos:direct".into(),
                     reply_to: "tp-1".into(),
                     after_seq: 4,
                     through_seq: 6,
@@ -1178,7 +1178,7 @@ mod tests {
             ),
             (
                 ControlMsg::ReplyAck {
-                    lane_id: "telepathy:direct".into(),
+                    lane_id: "telepathos:direct".into(),
                     reply_to: "tp-1".into(),
                     after_seq: 4,
                     through_seq: 6,
@@ -1189,7 +1189,7 @@ mod tests {
             ),
             (
                 ControlMsg::ReplyAckRetire {
-                    lane_id: "telepathy:direct".into(),
+                    lane_id: "telepathos:direct".into(),
                     reply_to: "tp-1".into(),
                     after_seq: 4,
                     through_seq: 6,
@@ -1237,7 +1237,7 @@ mod tests {
         let stt = ServerMsg::Stt {
             text: "heard".into(),
             confidence: Some(0.75),
-            repo: Some("telepathy:direct".into()),
+            repo: Some("telepathos:direct".into()),
             turn_token: "turn-1".into(),
             interaction_id: "i-1".into(),
         };
@@ -1245,7 +1245,7 @@ mod tests {
         assert_eq!(stt_value["type"], "stt");
         assert_eq!(stt_value["text"], "heard");
         assert_eq!(stt_value["confidence"], 0.75);
-        assert_eq!(stt_value["repo"], "telepathy:direct");
+        assert_eq!(stt_value["repo"], "telepathos:direct");
 
         let stt_without_metadata = serde_json::to_value(ServerMsg::Stt {
             text: "heard".into(),
@@ -1270,7 +1270,7 @@ mod tests {
         let messages = [
             (
                 ServerMsg::ReplyReceived {
-                    lane_id: "telepathy:direct".into(),
+                    lane_id: "telepathos:direct".into(),
                     reply_to: "tp-1".into(),
                     after_seq: 4,
                     through_seq: 6,
@@ -1281,7 +1281,7 @@ mod tests {
             ),
             (
                 ServerMsg::ReplyAcknowledged {
-                    lane_id: "telepathy:direct".into(),
+                    lane_id: "telepathos:direct".into(),
                     reply_to: "tp-1".into(),
                     after_seq: 4,
                     through_seq: 6,
@@ -1292,7 +1292,7 @@ mod tests {
             ),
             (
                 ServerMsg::ReplyAckRetired {
-                    lane_id: "telepathy:direct".into(),
+                    lane_id: "telepathos:direct".into(),
                     reply_to: "tp-1".into(),
                     after_seq: 4,
                     through_seq: 6,
@@ -1306,7 +1306,7 @@ mod tests {
         for (msg, wire_type) in messages {
             let value = serde_json::to_value(msg).unwrap();
             assert_eq!(value["type"], wire_type);
-            assert_eq!(value["lane_id"], "telepathy:direct");
+            assert_eq!(value["lane_id"], "telepathos:direct");
             assert_eq!(value["reply_to"], "tp-1");
             assert_eq!(value["after_seq"], 4);
             assert_eq!(value["through_seq"], 6);

@@ -58,7 +58,7 @@ export interface ReplyAck {
 /**
  * The handset has durably recorded the complete reply envelope.  This is
  * deliberately earlier than `reply_ack`: it proves a replayable receipt
- * exists locally, but does not authorize telepathyd delivery consumption.
+ * exists locally, but does not authorize telepathosd delivery consumption.
  */
 export interface ReplyReceived {
   tag: "reply_received";

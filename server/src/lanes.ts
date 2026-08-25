@@ -16,8 +16,8 @@ import { isValidLaneId, MAX_SAFE_SEQUENCE } from "./protocol.js";
  * switch between. Persisted to lanes.json next to the process cwd.
  *
  * A lane maps 1:1 to a Hermes session lane via chat_id (relay contract):
- *   "telepathy:direct"        → talking to Hermes himself, no project
- *   "telepathy:repo:<name>"   → per-project conversation
+ *   "telepathos:direct"        → talking to Hermes himself, no project
+ *   "telepathos:repo:<name>"   → per-project conversation
  */
 
 export interface Lane {
@@ -35,16 +35,16 @@ export interface LaneRegistry {
 }
 
 /**
- * Shared with `telepathy-lanes::MAX_LANE_COUNT`.
+ * Shared with `telepathos-lanes::MAX_LANE_COUNT`.
  *
  * A complete state response for 256 normal maximum-length generated lanes,
  * including `pending`, `active`, and `revision`, is under 128 KiB. That is an
- * eightfold margin below the 1 MiB Node ↔ telepathyd state transport cap.
+ * eightfold margin below the 1 MiB Node ↔ telepathosd state transport cap.
  */
 export const MAX_LANE_COUNT = 256;
 
 /**
- * Shared with `telepathy-lanes`.  These caps bound both durable snapshots and
+ * Shared with `telepathos-lanes`.  These caps bound both durable snapshots and
  * the `/api/state` envelope without altering the semantic value of an
  * admitted string.  Rust additionally calls out the same scalar-value limit;
  * Node checks it too so a malformed UTF-16 string cannot split the contract.
@@ -55,7 +55,7 @@ export const MAX_LANE_NAME_CODEPOINTS = 128;
 export const MAX_LANE_TIMESTAMP_UTF8_BYTES = 64;
 export const MAX_LANE_TIMESTAMP_UTF16_CODE_UNITS = 64;
 export const MAX_LANE_TIMESTAMP_CODEPOINTS = 64;
-/** Shared with telepathyd's external-state enrichment, never persisted. */
+/** Shared with telepathosd's external-state enrichment, never persisted. */
 export const MAX_ENRICHED_LANE_TITLE_UTF8_BYTES = 256;
 export const MAX_ENRICHED_LANE_TITLE_UTF16_CODE_UNITS = 128;
 export const MAX_ENRICHED_LANE_TITLE_CODEPOINTS = 128;
@@ -66,14 +66,14 @@ export const LANE_CAPACITY_ERROR_MESSAGE = "lane capacity reached; use an existi
 const DEFAULT_REGISTRY: LaneRegistry = {
   lanes: [
     {
-      id: "telepathy:direct",
+      id: "telepathos:direct",
       name: "direct",
       createdAt: new Date().toISOString(),
       lastActive: new Date().toISOString(),
     },
   ],
-  activeId: "telepathy:direct",
-  previousId: "telepathy:direct",
+  activeId: "telepathos:direct",
+  previousId: "telepathos:direct",
 };
 
 let saveCounter = 0;
@@ -81,7 +81,7 @@ let lanePersistenceUncertain: LanePersistenceError | null = null;
 let afterRenameHookForTests: (() => void) | null = null;
 let directorySyncHookForTests: ((path: string) => void) | null = null;
 // These revisions intentionally live only in process memory: the durable
-// registry format remains canonical and shared with telepathyd.  They let a
+// registry format remains canonical and shared with telepathosd.  They let a
 // long-running private meta-model proposal distinguish no selection change
 // from an ABA switch (A -> B -> A) that has the same final snapshot.
 const selectionRevisions = new WeakMap<LaneRegistry, number>();
@@ -271,7 +271,7 @@ function parseRegistry(raw: any, path: string): LaneRegistry {
 }
 
 function registryPath(): string {
-  return process.env.TELEPATHY_LANES ?? "lanes.json";
+  return process.env.TELEPATHOS_LANES ?? "lanes.json";
 }
 
 function isWellFormedUtf16(value: string): boolean {
@@ -332,7 +332,7 @@ function parseFixedDigits(value: string, start: number, length: number): number 
 
 /**
  * Both current registry writers have a stable timestamp spelling: Node writes
- * canonical UTC millisecond ISO strings and telepathyd writes `epoch-ms:`
+ * canonical UTC millisecond ISO strings and telepathosd writes `epoch-ms:`
  * plus a JSON-safe integer.  Keep both exact spellings readable because they
  * are already authoritative snapshots, but do not coerce or repair either.
  */
@@ -410,7 +410,7 @@ export function saveLanes(reg: LaneRegistry): void {
     active_id: reg.activeId,
     previous_id: reg.previousId,
   }, path);
-  // Rust telepathyd is the other registry owner; keep one canonical wire
+  // Rust telepathosd is the other registry owner; keep one canonical wire
   // shape on disk so either process can load the same file after restart.
   const json = JSON.stringify({
     lanes: reg.lanes.map((lane) => ({
@@ -534,7 +534,7 @@ function laneIdentityForName(name: unknown): { id: string; slug: string } {
     .map((character) => /[a-z0-9]/.test(character) ? character : "-")
     .join("")
     .replace(/^-+|-+$/g, "");
-  const id = `telepathy:repo:${slug}`;
+  const id = `telepathos:repo:${slug}`;
   if (!isValidLaneId(id)) {
     throw new LaneNameError("lane name is too long to produce a valid lane identifier");
   }

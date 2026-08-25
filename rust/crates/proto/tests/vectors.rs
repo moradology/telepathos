@@ -1,6 +1,6 @@
-// Shared-vector conformance: telepathy-proto must classify
+// Shared-vector conformance: telepathos-proto must classify
 // protocol/vectors.json exactly as server/src/protocol.ts does.
-use telepathy_proto::ControlMsg;
+use telepathos_proto::ControlMsg;
 
 fn vectors() -> serde_json::Value {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../protocol/vectors.json");

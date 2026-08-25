@@ -5,10 +5,10 @@ services:
       dockerfile: Dockerfile.hermes
     environment:
       - GATEWAY_RELAY_URL=http://host.docker.internal:8790
-      - GATEWAY_RELAY_ID=telepathy-dev
+      - GATEWAY_RELAY_ID=telepathos-dev
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - HERMES_ALLOW_ROOT_GATEWAY=1
-      # - TELEPATHY_NTFY_URL=https://ntfy.sh/telepathy-<your-secret-suffix>
+      # - TELEPATHOS_NTFY_URL=https://ntfy.sh/telepathos-<your-secret-suffix>
       # - GATEWAY_RELAY_SECRET=${GATEWAY_RELAY_SECRET}
     extra_hosts:
       - "host.docker.internal:host-gateway"

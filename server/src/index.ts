@@ -33,17 +33,17 @@ import { parseMeta, MetaAction } from "./meta.js";
 import { runMetaAgent } from "./meta-agent.js";
 import { mergeMetaLaneProposal, replaceLaneRegistry } from "./meta-lane-merge.js";
 import {
-  acknowledgeTelepathydDelivery,
+  acknowledgeTelepathosdDelivery,
   DeliveryReceipt,
   HermesReply,
-  fetchTelepathydState,
+  fetchTelepathosdState,
   InteractionRetryExpiredError,
-  recordTelepathydInteraction,
+  recordTelepathosdInteraction,
   respondViaHermes,
-  respondViaTelepathydMeta,
+  respondViaTelepathosdMeta,
   setCurrentLaneIdFn,
 } from "./hermes.js";
-import { currentTelepathydTargetIdentity } from "./target-scope.js";
+import { currentTelepathosdTargetIdentity } from "./target-scope.js";
 import { sharedTokenMatches, startApiServer, TlsMaterial } from "./api.js";
 import {
   InteractionOutbox,
@@ -68,14 +68,14 @@ import {
 } from "./reply-text.js";
 
 /**
- * telepathy bridge — v0.1 stub brain.
+ * telepathos bridge — v0.1 stub brain.
  * Protocol: see ../README.md. The agent step is a placeholder ("echo");
  * Hermes/pi plugs in at `respond()`.
  *
  * Robustness:
  * - utterance buffers are capped (open mics + low VAD thresholds must not OOM us)
  * - text reply frames are emitted as JSON; audio playback is local to Android
- * - optional shared-token auth via TELEPATHY_TOKEN (client puts it in hello)
+ * - optional shared-token auth via TELEPATHOS_TOKEN (client puts it in hello)
  */
 
 const MAX_UTTERANCE_BYTES = 16000 * 2 * 60; // 60 s of 16 kHz PCM16
@@ -83,11 +83,11 @@ const PREROLL_BYTES = 16000 * 2 * 0.32;     // ~320 ms of pre-speech audio
 const MAX_PREVALIDATION_AUDIO_BYTES = 16000 * 2 * 2; // cap a remote lane check at 2 s
 const DEFAULT_CAPTURE_PREPARATION_DEADLINE_MS = 5_000;
 const CAPTURE_PREPARATION_DEADLINE_MS = (() => {
-  const raw = process.env.TELEPATHY_CAPTURE_PREPARATION_DEADLINE_MS;
+  const raw = process.env.TELEPATHOS_CAPTURE_PREPARATION_DEADLINE_MS;
   if (raw === undefined || raw === "") return DEFAULT_CAPTURE_PREPARATION_DEADLINE_MS;
   const value = Number(raw);
   if (!Number.isSafeInteger(value) || value < 1 || value > 10 * 60 * 1_000) {
-    throw new Error("TELEPATHY_CAPTURE_PREPARATION_DEADLINE_MS must be an integer from 1 through 600000");
+    throw new Error("TELEPATHOS_CAPTURE_PREPARATION_DEADLINE_MS must be an integer from 1 through 600000");
   }
   return value;
 })();
@@ -144,19 +144,19 @@ export function phoneSafeErrorMessage(error: unknown, context?: "stt"): string {
 }
 
 const REPLY_ACK_OWNER_ABANDONMENT_MS = durationFromEnvironment(
-  "TELEPATHY_REPLY_ACK_ABANDONMENT_MS",
+  "TELEPATHOS_REPLY_ACK_ABANDONMENT_MS",
   24 * 60 * 60 * 1_000,
 );
 const REPLY_ACK_CONSUMED_RETENTION_MS = durationFromEnvironment(
-  "TELEPATHY_REPLY_ACK_CONSUMED_RETENTION_MS",
+  "TELEPATHOS_REPLY_ACK_CONSUMED_RETENTION_MS",
   24 * 60 * 60 * 1_000,
 );
 const REPLY_ACK_TOMBSTONE_RETENTION_MS = durationFromEnvironment(
-  "TELEPATHY_REPLY_ACK_TOMBSTONE_RETENTION_MS",
+  "TELEPATHOS_REPLY_ACK_TOMBSTONE_RETENTION_MS",
   7 * 24 * 60 * 60 * 1_000,
 );
 if (REPLY_ACK_TOMBSTONE_RETENTION_MS <= REPLY_ACK_CONSUMED_RETENTION_MS) {
-  throw new Error("TELEPATHY_REPLY_ACK_TOMBSTONE_RETENTION_MS must exceed consumed retention");
+  throw new Error("TELEPATHOS_REPLY_ACK_TOMBSTONE_RETENTION_MS must exceed consumed retention");
 }
 
 const replyAckStore = new ReplyAckStore();
@@ -168,7 +168,7 @@ const recentlySeenReplyAckOwners = new ReplyAckOwnerHighWaterCache(replyAckProce
 const replyAckSnapshot = replyAckStore.loadSnapshot();
 for (const binding of replyAckSnapshot.bindings) {
   // A v8 prepared binding contains a complete agent_end envelope and is
-  // safe to replay. It cannot authorize telepathyd consumption until the
+  // safe to replay. It cannot authorize telepathosd consumption until the
   // handset durably records and proves its receipt.
   replyAckBindings.set(
     `${binding.laneId}\u0000${binding.replyTo}\u0000${binding.afterSeq}\u0000${binding.throughSeq}`,
@@ -260,8 +260,8 @@ let interactionRetryDelayMs = 1_000;
 let remoteOutboxPersistenceFailure: string | null = null;
 
 /** Match hermesConfig(): whitespace-only configuration means local mode. */
-function telepathydConfigured(): boolean {
-  return Boolean(process.env.TELEPATHY_HERMES_URL?.trim());
+function telepathosdConfigured(): boolean {
+  return Boolean(process.env.TELEPATHOS_HERMES_URL?.trim());
 }
 
 function remoteTurnsUnavailableReason(): string | null {
@@ -302,7 +302,7 @@ function clearRemoteOutboxPersistenceFailure(): void {
 }
 
 /**
- * Interaction IDs are part of telepathyd's durable dedupe key. The bridge
+ * Interaction IDs are part of telepathosd's durable dedupe key. The bridge
  * instance UUID separates restarts; the sequence must span WebSockets so a
  * handset reconnect cannot reuse an ID allocated by its old connection.
  */
@@ -311,7 +311,7 @@ function allocateInteractionId(): string {
 }
 
 function scheduleInteractionOutboxRetry() {
-  if (interactionRetryTimer !== null || !telepathydConfigured()) return;
+  if (interactionRetryTimer !== null || !telepathosdConfigured()) return;
   interactionRetryTimer = setTimeout(() => {
     interactionRetryTimer = null;
     flushInteractionOutbox();
@@ -320,7 +320,7 @@ function scheduleInteractionOutboxRetry() {
 }
 
 function flushInteractionOutbox() {
-  if (interactionFlushPromise !== null || !telepathydConfigured()) return;
+  if (interactionFlushPromise !== null || !telepathosdConfigured()) return;
   interactionFlushPromise = (async () => {
     let records: InteractionRecord[];
     try {
@@ -334,10 +334,10 @@ function flushInteractionOutbox() {
     for (const record of records) {
       try {
         const targetIdentity = interactionOutbox.targetScope();
-        if (currentTelepathydTargetIdentity() !== targetIdentity) {
-          throw new Error("telepathyd target identity changed; durable interactions remain pending");
+        if (currentTelepathosdTargetIdentity() !== targetIdentity) {
+          throw new Error("telepathosd target identity changed; durable interactions remain pending");
         }
-        await recordTelepathydInteraction(
+        await recordTelepathosdInteraction(
           record.laneId,
           record.interactionId,
           record.interactionCreatedAtMs,
@@ -346,14 +346,14 @@ function flushInteractionOutbox() {
         // A request may have completed against the old daemon while the
         // process configuration changed. Never retire that row under the new
         // target; it remains recoverable when the original target returns.
-        if (currentTelepathydTargetIdentity() !== targetIdentity) {
-          throw new Error("telepathyd target identity changed while interaction was in flight; durable interaction remains pending");
+        if (currentTelepathosdTargetIdentity() !== targetIdentity) {
+          throw new Error("telepathosd target identity changed while interaction was in flight; durable interaction remains pending");
         }
         interactionOutbox.removeDelivered(record);
         interactionRetryDelayMs = 1_000;
       } catch (error) {
         if (error instanceof InteractionRetryExpiredError) {
-          // Never discard a completed turn once telepathyd's seven-day dedupe
+          // Never discard a completed turn once telepathosd's seven-day dedupe
           // horizon has passed. Keep it as a terminal durable record and stop
           // accepting remote turns until an operator reconciles it.
           try {
@@ -362,7 +362,7 @@ function flushInteractionOutbox() {
             // unavailableReason(). Do not leave a stale filesystem-error
             // reason around after the retry repairs the snapshot.
             clearRemoteOutboxPersistenceFailure();
-            console.error("telepathyd interaction: retry expired; remote turns are paused:", error.message);
+            console.error("telepathosd interaction: retry expired; remote turns are paused:", error.message);
           } catch (persistenceError) {
             // The record remains pending when markExpired rolls back. Pausing
             // new remote turns prevents additional side effects while the
@@ -378,7 +378,7 @@ function flushInteractionOutbox() {
           }
           break;
         }
-        console.error("telepathyd interaction: retrying durable activity record:", (error as Error).message);
+        console.error("telepathosd interaction: retrying durable activity record:", (error as Error).message);
         interactionRetryDelayMs = Math.min(interactionRetryDelayMs * 2, 30_000);
         scheduleInteractionOutboxRetry();
         break;
@@ -402,19 +402,19 @@ const isLoopbackHost = (host: string) =>
 const handshakeTimers = new WeakMap<WebSocket, NodeJS.Timeout>();
 
 function startBridgeServer(): void {
-  const tlsCertPath = process.env.TELEPATHY_TLS_CERT;
-  const tlsKeyPath = process.env.TELEPATHY_TLS_KEY;
+  const tlsCertPath = process.env.TELEPATHOS_TLS_CERT;
+  const tlsKeyPath = process.env.TELEPATHOS_TLS_KEY;
   if (Boolean(tlsCertPath) !== Boolean(tlsKeyPath)) {
-    throw new Error("TELEPATHY_TLS_CERT and TELEPATHY_TLS_KEY must be configured together");
+    throw new Error("TELEPATHOS_TLS_CERT and TELEPATHOS_TLS_KEY must be configured together");
   }
   const tlsMaterial: TlsMaterial | undefined = tlsCertPath && tlsKeyPath
     ? { cert: readFileSync(tlsCertPath), key: readFileSync(tlsKeyPath) }
     : undefined;
   tlsServer = tlsMaterial ? https.createServer(tlsMaterial) : null;
   if ((!isLoopbackHost(config.host) || !isLoopbackHost(config.apiHost)) &&
-      (!process.env.TELEPATHY_TOKEN || !tlsMaterial)) {
+      (!process.env.TELEPATHOS_TOKEN || !tlsMaterial)) {
     throw new Error(
-      "non-loopback endpoints require TELEPATHY_TOKEN and TELEPATHY_TLS_CERT/TELEPATHY_TLS_KEY",
+      "non-loopback endpoints require TELEPATHOS_TOKEN and TELEPATHOS_TLS_CERT/TELEPATHOS_TLS_KEY",
     );
   }
 
@@ -530,7 +530,7 @@ function startBridgeServer(): void {
     tlsServer.listen(config.port, config.host);
   }
 
-  console.log(`telepathy bridge listening on ${tlsServer ? "wss" : "ws"}://${config.host}:${config.port} (stt=${config.stt}${process.env.TELEPATHY_TOKEN ? " auth=on" : ""})`);
+  console.log(`telepathos bridge listening on ${tlsServer ? "wss" : "ws"}://${config.host}:${config.port} (stt=${config.stt}${process.env.TELEPATHOS_TOKEN ? " auth=on" : ""})`);
 
   for (const sig of ["SIGINT", "SIGTERM"] as const) {
     process.on(sig, () => {
@@ -659,7 +659,7 @@ async function handleUtterance(ws: WebSocket, state: ClientState) {
   }
   clearCapturePreparation(state, ws, turnToken, captureGeneration);
   const remoteInteraction = state.captureRemoteInteraction;
-  if (telepathydConfigured() && remoteInteraction === null) {
+  if (telepathosdConfigured() && remoteInteraction === null) {
     send(ws, { type: "error", message: "remote turns paused: no durable activity-record reservation" });
     step(ws, state, { kind: "CANCEL" });
     return;
@@ -689,7 +689,7 @@ async function handleUtterance(ws: WebSocket, state: ClientState) {
   try {
     // Once the authoritative daemon is configured, an unsnapshotted phone
     // turn is unsafe: the Node registry may describe a different lane.
-    if (telepathydConfigured()) {
+    if (telepathosdConfigured()) {
       if (captureLaneId === null || captureLaneRevision === null) {
         send(ws, { type: "error", message: "lane snapshot required" });
         return;
@@ -728,7 +728,7 @@ async function handleUtterance(ws: WebSocket, state: ClientState) {
       type: "stt",
       text,
       ...(transcript?.confidence !== undefined && { confidence: transcript.confidence }),
-      ...(process.env.TELEPATHY_REPO && { repo: process.env.TELEPATHY_REPO }),
+      ...(process.env.TELEPATHOS_REPO && { repo: process.env.TELEPATHOS_REPO }),
       turn_token: turnToken,
       interaction_id: interactionId,
     });
@@ -738,11 +738,11 @@ async function handleUtterance(ws: WebSocket, state: ClientState) {
     if (state.cancelRequested || !isCurrentInteraction(state, interactionId, turnToken, abortController.signal)) return;
 
     // ---- meta agent plane: double-pinch or codeword routes here, never to Hermes ----
-    const codeword = text.match(/^(meta|telepathy)[,: ]+(.*)$/i);
+    const codeword = text.match(/^(meta|telepathos)[,: ]+(.*)$/i);
     if (state.metaMode || codeword) {
       const stripped = codeword ? codeword[2] : text;
       let reply: string;
-      const remoteReply = await respondViaTelepathydMeta(stripped, abortController.signal);
+      const remoteReply = await respondViaTelepathosdMeta(stripped, abortController.signal);
       if (!isCurrentInteraction(state, interactionId, turnToken, abortController.signal)) return;
       if (remoteReply !== null) {
         reply = remoteReply;
@@ -774,14 +774,14 @@ async function handleUtterance(ws: WebSocket, state: ClientState) {
                 laneSelectionRevision(lanes),
               ),
             );
-            if (!telepathydConfigured()) {
+            if (!telepathosdConfigured()) {
               mutateAndSaveLanes(lanes, applyProposal);
             } else {
               applyProposal();
             }
           }
         } else {
-          reply = telepathydConfigured()
+          reply = telepathosdConfigured()
             ? executeMeta(action)
             : executeMetaTurn(action);
         }
@@ -1086,10 +1086,10 @@ function saveReplyAckBindings(
  * never migrate a binding by sending an old receipt: this function runs after
  * hello, persists the new installation owner first, and only then replays.
  *
- * prepared and received bindings are retained because telepathyd still owns
+ * prepared and received bindings are retained because telepathosd still owns
  * their delivery. An abandoned received proof is installation-local, so the
  * replacement installation starts at prepared and must prove its own local
- * durable copy. consumed bindings no longer represent telepathyd ownership;
+ * durable copy. consumed bindings no longer represent telepathosd ownership;
  * their retention expiry can therefore reclaim capacity without losing a
  * remotely owned reply.
  */
@@ -1126,7 +1126,7 @@ function reconcileReplyAcksForInstallation(state: ClientState, nowMs = Date.now(
     if (binding.state === "consumed") continue;
     if (!replyAckOwnerIsAbandoned(binding, nowMs)) continue;
     // An old consume task may still finish after this ownership transfer.
-    // Exact delivery consumption is idempotent in telepathyd; fence the old
+    // Exact delivery consumption is idempotent in telepathosd; fence the old
     // task by replacing the map object and cancel its retry timer. The task
     // checks that identity before persisting `consumed` or sending a stale
     // confirmation, while the new owner starts from its own prepared proof.
@@ -1257,8 +1257,8 @@ function prepareReplyAck(
   if (installationId === null) {
     throw new Error("cannot prepare reply acknowledgement before installation hello");
   }
-  if (receipt.targetIdentity !== currentTelepathydTargetIdentity()) {
-    throw new Error("telepathyd target identity changed; remote reply acknowledgement remains pending");
+  if (receipt.targetIdentity !== currentTelepathosdTargetIdentity()) {
+    throw new Error("telepathosd target identity changed; remote reply acknowledgement remains pending");
   }
   sweepExpiredConsumedReplyAcks();
   const nowMs = Date.now();
@@ -1340,7 +1340,7 @@ function ownedReplyAckBinding(state: ClientState, key: string): ReplyAckBinding 
 /**
  * The handset may send this only after atomically persisting the replay
  * envelope locally. Persist that proof before allowing the later reply_ack
- * to consume telepathyd's delivery.
+ * to consume telepathosd's delivery.
  */
 function receiveReplyAck(ws: WebSocket, state: ClientState, msg: ReplyReceived): void {
   if (!replyAckTargetIsCurrent()) return;
@@ -1394,7 +1394,7 @@ function acknowledgeReplyAck(ws: WebSocket, state: ClientState, msg: ReplyAck) {
         tombstone.turnToken !== msg.turnToken ||
         tombstone.interactionId !== msg.interactionId) return;
     // The external delivery was consumed before this record was reclaimed.
-    // A late exact ack is only a confirmation replay; it never calls telepathyd.
+    // A late exact ack is only a confirmation replay; it never calls telepathosd.
     void sendAcknowledgement(ws, {
       type: "reply_acknowledged",
       lane_id: tombstone.laneId,
@@ -1437,11 +1437,11 @@ function acknowledgeReplyAck(ws: WebSocket, state: ClientState, msg: ReplyAck) {
       if (unavailableReason !== null) {
         throw new Error(`reply acknowledgement persistence is unavailable: ${unavailableReason}`);
       }
-      await acknowledgeTelepathydDelivery({ ...msg, targetIdentity: binding.targetIdentity });
+      await acknowledgeTelepathosdDelivery({ ...msg, targetIdentity: binding.targetIdentity });
       if (replyAckBindings.get(key) !== binding) return;
       // Persist external consumption before asking Android to durably record
       // it. If the bridge dies here, a restart either sees `consumed`, or
-      // retries the idempotent telepathyd consume from `received`.
+      // retries the idempotent telepathosd consume from `received`.
       consumed = { ...binding, state: "consumed" };
       consumed = { ...consumed, consumedAtMs: Date.now() };
       const nextBindings = new Map(replyAckBindings);
@@ -1456,7 +1456,7 @@ function acknowledgeReplyAck(ws: WebSocket, state: ClientState, msg: ReplyAck) {
     })();
   replyAckInFlight.set(key, task);
   void task.catch((error) => {
-    console.error("telepathyd delivery ack: failed to persist consumption:", (error as Error).message);
+    console.error("telepathosd delivery ack: failed to persist consumption:", (error as Error).message);
     if (!replyAckTargetIsCurrent()) return;
     if (state.pendingReplyAcks.get(key) !== binding && replyAckBindings.get(key) !== binding) return;
     const timer = setTimeout(() => {
@@ -1476,7 +1476,7 @@ function acknowledgeReplyAck(ws: WebSocket, state: ClientState, msg: ReplyAck) {
  *
  * Once the removal is durable, a restarted bridge has no record to inspect.
  * Repeating `reply_ack_retire` is nevertheless safe to confirm: it cannot
- * authorize telepathyd consumption and Android only emits it after persisting
+ * authorize telepathosd consumption and Android only emits it after persisting
  * a prior `reply_acknowledged` frame. This makes the final frame idempotent
  * across a crash after removal but before its WebSocket handoff.
  */
@@ -1761,7 +1761,7 @@ async function validateLaneSnapshot(
 ) {
   try {
     if (revision === undefined) throw new Error("lane snapshot required");
-    const remoteState = await fetchTelepathydState();
+    const remoteState = await fetchTelepathosdState();
     if (remoteState === null ||
         remoteState.revision !== revision ||
         !remoteState.lanes.some((lane) => lane.id === laneId)) {
@@ -1821,8 +1821,8 @@ function onControl(ws: WebSocket, state: ClientState, raw: string) {
   switch (msg.tag) {
     case "hello": {
       if (state.authenticated) return; // already handshaked
-      if (process.env.TELEPATHY_TOKEN &&
-          !sharedTokenMatches(process.env.TELEPATHY_TOKEN, msg.token)) {
+      if (process.env.TELEPATHOS_TOKEN &&
+          !sharedTokenMatches(process.env.TELEPATHOS_TOKEN, msg.token)) {
         console.warn("auth failed — closing");
         ws.close(4001, "unauthorized");
         return;
@@ -1962,7 +1962,7 @@ function onControl(ws: WebSocket, state: ClientState, raw: string) {
       // Only accept a lane snapshot before speech starts. Once the server has
       // entered capturing/processing, later switches belong to later turns.
       if (state.fsm.phase === "listening" && state.captureTurnToken === null && state.activeInteractionId === null) {
-        if (telepathydConfigured()) {
+        if (telepathosdConfigured()) {
           const reason = remoteTurnsUnavailableReason();
           if (reason !== null) {
             send(ws, { type: "error", message: `remote turns paused: ${reason}` });
@@ -1982,7 +1982,7 @@ function onControl(ws: WebSocket, state: ClientState, raw: string) {
         state.captureLaneId = msg.id;
         state.captureLaneRevision = msg.revision ?? null;
         state.captureTurnToken = msg.turnToken;
-        state.captureLaneValidated = !telepathydConfigured();
+        state.captureLaneValidated = !telepathosdConfigured();
         state.captureRemoteInteraction = null;
         state.pendingCaptureAudio = [];
         state.pendingCaptureAudioBytes = 0;
@@ -2066,7 +2066,7 @@ export function executeMeta(action: MetaAction, reg: LaneRegistry = lanes): stri
       const lane = action.lane ?? activeLane(reg);
       const age = Math.round((Date.now() - new Date(lane.lastActive).getTime()) / 3600000);
       const ageText = age < 1 ? "under an hour" : `${age} hour${age > 1 ? "s" : ""}`;
-      if (lane.id === "telepathy:direct") {
+      if (lane.id === "telepathos:direct") {
         return `Direct line to Hermes. No project context.`;
       }
       return `Lane ${lane.name}. Last active ${ageText} ago. Full briefing arrives with the Hermes connector.`;
@@ -2082,8 +2082,8 @@ export function executeMeta(action: MetaAction, reg: LaneRegistry = lanes): stri
       if (invalid) return invalid.message;
       const lane = createLane(reg, name);
       switchLane(reg, lane.id);
-      // context seeding runs in telepathyd when configured (transcript summary)
-      return `Forked into ${lane.name}. Context carry-over requires the telepathyd daemon.`;
+      // context seeding runs in telepathosd when configured (transcript summary)
+      return `Forked into ${lane.name}. Context carry-over requires the telepathosd daemon.`;
     }
     case "unknown":
       return "Meta commands: switch to name, list conversations, new conversation for name, brief, note that, fork.";
